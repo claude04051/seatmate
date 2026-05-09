@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Selfies readable by authenticated" ON storage.objects;

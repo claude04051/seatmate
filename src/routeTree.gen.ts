@@ -9,38 +9,151 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppSearchRouteImport } from './routes/_app/search'
+import { Route as AppMeRouteImport } from './routes/_app/me'
+import { Route as AppFeedRouteImport } from './routes/_app/feed'
+import { Route as AppProfileUserIdRouteImport } from './routes/_app/profile.$userId'
+import { Route as AppFlightFlightNumberDateRouteImport } from './routes/_app/flight.$flightNumber.$date'
+import { Route as AppClaimFlightNumberDateSeatRouteImport } from './routes/_app/claim.$flightNumber.$date.$seat'
 
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppSearchRoute = AppSearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMeRoute = AppMeRouteImport.update({
+  id: '/me',
+  path: '/me',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFeedRoute = AppFeedRouteImport.update({
+  id: '/feed',
+  path: '/feed',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProfileUserIdRoute = AppProfileUserIdRouteImport.update({
+  id: '/profile/$userId',
+  path: '/profile/$userId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFlightFlightNumberDateRoute =
+  AppFlightFlightNumberDateRouteImport.update({
+    id: '/flight/$flightNumber/$date',
+    path: '/flight/$flightNumber/$date',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppClaimFlightNumberDateSeatRoute =
+  AppClaimFlightNumberDateSeatRouteImport.update({
+    id: '/claim/$flightNumber/$date/$seat',
+    path: '/claim/$flightNumber/$date/$seat',
+    getParentRoute: () => AppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/feed': typeof AppFeedRoute
+  '/me': typeof AppMeRoute
+  '/search': typeof AppSearchRoute
+  '/profile/$userId': typeof AppProfileUserIdRoute
+  '/flight/$flightNumber/$date': typeof AppFlightFlightNumberDateRoute
+  '/claim/$flightNumber/$date/$seat': typeof AppClaimFlightNumberDateSeatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/feed': typeof AppFeedRoute
+  '/me': typeof AppMeRoute
+  '/search': typeof AppSearchRoute
+  '/profile/$userId': typeof AppProfileUserIdRoute
+  '/flight/$flightNumber/$date': typeof AppFlightFlightNumberDateRoute
+  '/claim/$flightNumber/$date/$seat': typeof AppClaimFlightNumberDateSeatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/_app/feed': typeof AppFeedRoute
+  '/_app/me': typeof AppMeRoute
+  '/_app/search': typeof AppSearchRoute
+  '/_app/profile/$userId': typeof AppProfileUserIdRoute
+  '/_app/flight/$flightNumber/$date': typeof AppFlightFlightNumberDateRoute
+  '/_app/claim/$flightNumber/$date/$seat': typeof AppClaimFlightNumberDateSeatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/feed'
+    | '/me'
+    | '/search'
+    | '/profile/$userId'
+    | '/flight/$flightNumber/$date'
+    | '/claim/$flightNumber/$date/$seat'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/auth'
+    | '/feed'
+    | '/me'
+    | '/search'
+    | '/profile/$userId'
+    | '/flight/$flightNumber/$date'
+    | '/claim/$flightNumber/$date/$seat'
+  id:
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/auth'
+    | '/_app/feed'
+    | '/_app/me'
+    | '/_app/search'
+    | '/_app/profile/$userId'
+    | '/_app/flight/$flightNumber/$date'
+    | '/_app/claim/$flightNumber/$date/$seat'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
+  AuthRoute: typeof AuthRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,22 +161,76 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/search': {
+      id: '/_app/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof AppSearchRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/me': {
+      id: '/_app/me'
+      path: '/me'
+      fullPath: '/me'
+      preLoaderRoute: typeof AppMeRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/feed': {
+      id: '/_app/feed'
+      path: '/feed'
+      fullPath: '/feed'
+      preLoaderRoute: typeof AppFeedRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/profile/$userId': {
+      id: '/_app/profile/$userId'
+      path: '/profile/$userId'
+      fullPath: '/profile/$userId'
+      preLoaderRoute: typeof AppProfileUserIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/flight/$flightNumber/$date': {
+      id: '/_app/flight/$flightNumber/$date'
+      path: '/flight/$flightNumber/$date'
+      fullPath: '/flight/$flightNumber/$date'
+      preLoaderRoute: typeof AppFlightFlightNumberDateRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/claim/$flightNumber/$date/$seat': {
+      id: '/_app/claim/$flightNumber/$date/$seat'
+      path: '/claim/$flightNumber/$date/$seat'
+      fullPath: '/claim/$flightNumber/$date/$seat'
+      preLoaderRoute: typeof AppClaimFlightNumberDateSeatRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
+interface AppRouteChildren {
+  AppFeedRoute: typeof AppFeedRoute
+  AppMeRoute: typeof AppMeRoute
+  AppSearchRoute: typeof AppSearchRoute
+  AppProfileUserIdRoute: typeof AppProfileUserIdRoute
+  AppFlightFlightNumberDateRoute: typeof AppFlightFlightNumberDateRoute
+  AppClaimFlightNumberDateSeatRoute: typeof AppClaimFlightNumberDateSeatRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppFeedRoute: AppFeedRoute,
+  AppMeRoute: AppMeRoute,
+  AppSearchRoute: AppSearchRoute,
+  AppProfileUserIdRoute: AppProfileUserIdRoute,
+  AppFlightFlightNumberDateRoute: AppFlightFlightNumberDateRoute,
+  AppClaimFlightNumberDateSeatRoute: AppClaimFlightNumberDateSeatRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
+  AuthRoute: AuthRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
