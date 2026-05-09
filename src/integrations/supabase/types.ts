@@ -14,7 +14,75 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          contact_phone: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          instagram: string | null
+          updated_at: string
+        }
+        Insert: {
+          contact_phone?: string | null
+          created_at?: string
+          display_name?: string | null
+          id: string
+          instagram?: string | null
+          updated_at?: string
+        }
+        Update: {
+          contact_phone?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          instagram?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      seat_posts: {
+        Row: {
+          caption: string | null
+          created_at: string
+          flight_date: string
+          flight_number: string
+          id: string
+          seat: string
+          selfie_path: string
+          show_instagram: boolean
+          show_phone: boolean
+          ticket_path: string
+          user_id: string
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          flight_date: string
+          flight_number: string
+          id?: string
+          seat: string
+          selfie_path: string
+          show_instagram?: boolean
+          show_phone?: boolean
+          ticket_path: string
+          user_id: string
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          flight_date?: string
+          flight_number?: string
+          id?: string
+          seat?: string
+          selfie_path?: string
+          show_instagram?: boolean
+          show_phone?: boolean
+          ticket_path?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
