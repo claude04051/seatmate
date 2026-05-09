@@ -30,17 +30,25 @@ function AuthPage() {
 
   useEffect(() => { if (session) nav({ to: "/feed" }); }, [session, nav]);
 
+  const [sentTo, setSentTo] = useState<string | null>(null);
+
   const submitEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email, password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: `${window.location.origin}/feed` },
         });
         if (error) throw error;
-        toast.success("Welcome aboard!");
+        // If email confirmation is required, no session is returned yet.
+        if (!data.session) {
+          setSentTo(email);
+          toast.success("Check your inbox to verify your email.");
+        } else {
+          toast.success("Welcome aboard!");
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -85,7 +93,33 @@ function AuthPage() {
         <span className="font-display font-bold tracking-tight">SeatMate</span>
       </div>
 
-      {step === "form" ? (
+      {sentTo ? (
+        <div className="mt-6 text-center space-y-4">
+          <div className="mx-auto size-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <Mail className="size-6 text-primary" />
+          </div>
+          <h1 className="text-2xl font-bold">Verify your email</h1>
+          <p className="text-sm text-muted-foreground">
+            We sent a confirmation link to <span className="text-foreground font-medium">{sentTo}</span>.
+            Tap the link in the email to activate your account.
+          </p>
+          <button
+            onClick={async () => {
+              const { error } = await supabase.auth.resend({ type: "signup", email: sentTo });
+              if (error) toast.error(error.message); else toast.success("Email resent");
+            }}
+            className="text-sm text-primary font-medium"
+          >
+            Didn't get it? Resend
+          </button>
+          <div>
+            <button onClick={() => { setSentTo(null); nav({ to: "/auth", search: { mode: "signin" } }); }}
+              className="mt-2 text-sm text-muted-foreground underline">
+              Back to sign in
+            </button>
+          </div>
+        </div>
+      ) : step === "form" ? (
         <>
           <h1 className="text-3xl font-bold">
             {mode === "signup" ? "Create your account" : "Welcome back"}
