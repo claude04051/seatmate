@@ -30,17 +30,25 @@ function AuthPage() {
 
   useEffect(() => { if (session) nav({ to: "/feed" }); }, [session, nav]);
 
+  const [sentTo, setSentTo] = useState<string | null>(null);
+
   const submitEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email, password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: `${window.location.origin}/feed` },
         });
         if (error) throw error;
-        toast.success("Welcome aboard!");
+        // If email confirmation is required, no session is returned yet.
+        if (!data.session) {
+          setSentTo(email);
+          toast.success("Check your inbox to verify your email.");
+        } else {
+          toast.success("Welcome aboard!");
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
