@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SillageRouteImport } from './routes/sillage'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
@@ -19,6 +20,11 @@ import { Route as AppProfileUserIdRouteImport } from './routes/_app/profile.$use
 import { Route as AppFlightFlightNumberDateRouteImport } from './routes/_app/flight.$flightNumber.$date'
 import { Route as AppClaimFlightNumberDateSeatRouteImport } from './routes/_app/claim.$flightNumber.$date.$seat'
 
+const SillageRoute = SillageRouteImport.update({
+  id: '/sillage',
+  path: '/sillage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -68,6 +74,7 @@ const AppClaimFlightNumberDateSeatRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/sillage': typeof SillageRoute
   '/auth': typeof AuthRoute
   '/feed': typeof AppFeedRoute
   '/me': typeof AppMeRoute
@@ -78,6 +85,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/sillage': typeof SillageRoute
   '/auth': typeof AuthRoute
   '/feed': typeof AppFeedRoute
   '/me': typeof AppMeRoute
@@ -90,6 +98,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/sillage': typeof SillageRoute
   '/auth': typeof AuthRoute
   '/_app/feed': typeof AppFeedRoute
   '/_app/me': typeof AppMeRoute
@@ -102,6 +111,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/sillage'
     | '/auth'
     | '/feed'
     | '/me'
@@ -112,6 +122,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/sillage'
     | '/auth'
     | '/feed'
     | '/me'
@@ -123,6 +134,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/sillage'
     | '/auth'
     | '/_app/feed'
     | '/_app/me'
@@ -135,11 +147,19 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  SillageRoute: typeof SillageRoute
   AuthRoute: typeof AuthRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sillage': {
+      id: '/sillage'
+      path: '/sillage'
+      fullPath: '/sillage'
+      preLoaderRoute: typeof SillageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
@@ -229,6 +249,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  SillageRoute: SillageRoute,
   AuthRoute: AuthRoute,
 }
 export const routeTree = rootRouteImport
