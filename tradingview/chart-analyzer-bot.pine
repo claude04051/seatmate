@@ -21,6 +21,9 @@ rsiLen   = input.int(14, "RSI Length",           group=grpEntry)
 rsiOB    = input.int(70, "RSI Overbought",       group=grpEntry)
 rsiOS    = input.int(30, "RSI Oversold",         group=grpEntry)
 minScore = input.int(5, "Minimum Confluence Score (1-6) to Trigger", minval=1, maxval=6, group=grpEntry)
+tradeMode = input.string("Both", "Trade Direction", options=["Both", "Long Only", "Short Only"], group=grpEntry)
+allowLong  = tradeMode != "Short Only"
+allowShort = tradeMode != "Long Only"
 
 useAdx     = input.bool(true, "Require Trend Strength (ADX gate)", group=grpFilter)
 adxLen     = input.int(14, "ADX / DMI Length", group=grpFilter)
@@ -70,7 +73,9 @@ rsiVal  = ta.rsi(close, rsiLen)
 atrVal  = ta.atr(atrLen)
 
 [diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
-adxOk = not useAdx or adxVal >= adxMin
+adxOk      = not useAdx or adxVal >= adxMin
+longDmiOk  = not useAdx or diPlus >= diMinus    // directional movement confirms up
+shortDmiOk = not useAdx or diMinus >= diPlus    // directional movement confirms down
 
 volAvg = ta.sma(volume, volLen)
 volDataOk = not na(volAvg) and volAvg > 0
@@ -165,8 +170,8 @@ if not na(pivLow)
 if not na(pivHigh)
     lastPivHigh := pivHigh
 
-longTrigger  = tradeDir == 0 and ta.crossover(emaFast, emaSlow)  and htfBias == 1  and adxOk and longScore  >= minScore and barstate.isconfirmed
-shortTrigger = tradeDir == 0 and ta.crossunder(emaFast, emaSlow) and htfBias == -1 and adxOk and shortScore >= minScore and barstate.isconfirmed
+longTrigger  = tradeDir == 0 and allowLong  and ta.crossover(emaFast, emaSlow)  and htfBias == 1  and adxOk and longDmiOk  and longScore  >= minScore and barstate.isconfirmed
+shortTrigger = tradeDir == 0 and allowShort and ta.crossunder(emaFast, emaSlow) and htfBias == -1 and adxOk and shortDmiOk and shortScore >= minScore and barstate.isconfirmed
 
 deleteDrawings() =>
     line.delete(entryLine)
@@ -196,6 +201,7 @@ if newDir != 0
         deleteDrawings()
     entryPrice := close
     [sl, risk] = buildLevels(newDir)
+    risk := math.max(risk, syminfo.mintick)   // guard against zero-risk (illiquid) div-by-zero
     slPrice  := sl
     initRisk := risk
     tp1 := newDir == 1 ? entryPrice + risk * tp1R : entryPrice - risk * tp1R
@@ -233,7 +239,8 @@ string exitTag = na
 color exitCol = na
 bool  exitUp  = false
 
-if tradeDir == 1
+canManage = tradeDir != 0 and barstate.isconfirmed and bar_index > entryBarIdx
+if tradeDir == 1 and canManage
     if not tp1Hit and high >= tp1
         tp1Hit := true
         if useBE
@@ -261,7 +268,7 @@ if tradeDir == 1
         exitCol := color.new(color.gray, 0)
         exitUp := false
 
-if tradeDir == -1
+if tradeDir == -1 and canManage
     if not tp1Hit and low <= tp1
         tp1Hit := true
         if useBE

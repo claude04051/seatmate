@@ -16,14 +16,19 @@ actually performed.
 ### Precision filters (what makes signals stricter)
 
 - **ADX trend-strength gate** — no signal fires unless ADX ≥ your threshold, so
-  setups are skipped in flat/choppy conditions where EMA crosses whipsaw.
+  setups are skipped in flat/choppy conditions where EMA crosses whipsaw. The
+  DMI direction must also agree (DI+ dominant for longs, DI− for shorts).
+- **Direction filter** — trade Both, Long Only, or Short Only.
 - **Volume confirmation** — a signal scores a point only when volume is above its
   average (auto-passes on symbols with no volume data).
 - **Mid-timeframe agreement** — optionally require the mid TF to agree, not just
   the macro trend.
 - **Confirmed-bar & non-repainting** — triggers only on closed bars, and
   higher-timeframe values are read with `lookahead_off` and a realtime offset so
-  levels don't shift after the fact.
+  levels don't shift after the fact. Trade management (TP/SL hits, breakeven,
+  trailing) is also evaluated only on confirmed bars *after* the entry bar, so a
+  setup can never be instantly stopped/filled by price action that occurred
+  before entry, and the stats don't flicker on the live bar.
 
 Each condition contributes to a **confluence score (0–6)**. A long/short signal
 fires only when the EMA cross just happened, the macro bias agrees, ADX confirms
