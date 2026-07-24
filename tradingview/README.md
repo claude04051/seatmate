@@ -29,7 +29,22 @@ Each condition contributes to a **confluence score (0–6)**. A long/short signa
 fires only when the EMA cross just happened, the macro bias agrees, ADX confirms
 strength, and the score meets your `Minimum Confluence Score`.
 
-## The trade plan drawn on the chart
+## Marks the whole chart automatically
+
+As soon as you add the indicator it runs across all loaded history and marks
+**every** setup it finds — each one keeps its own entry line, stop line, three
+take-profit lines and risk/reward zones, frozen between the entry bar and the bar
+where it hit TP or SL. Scroll back and you'll see the full trade history painted
+on the chart, not just the latest signal.
+
+- `Mark EVERY historical setup` (default on) — turn off to show only the most
+  recent setup.
+- `Show detailed Entry/SL/TP label` (default on) — turn off to reduce clutter when
+  many setups are on screen (lines, zones and TP/SL markers still show).
+- TradingView caps drawings at 500 each, so the most recent ~100 setups stay
+  visible; older ones drop off automatically as you load more history.
+
+## The trade plan drawn on each setup
 
 On every signal:
 - A triangle marker and a solid **entry** line.

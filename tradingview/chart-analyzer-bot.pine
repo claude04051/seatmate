@@ -43,9 +43,11 @@ expiryBars = input.int(100, "Invalidate Unresolved Setup After N Bars (0 = never
 
 useCandles = input.bool(true, "Require Candlestick Confirmation", group=grpCandle)
 
-showTable  = input.bool(true, "Show Analysis Panel", group=grpDisp)
-showStats  = input.bool(true, "Show Historical Win-Rate Stats", group=grpDisp)
-showTrendBg= input.bool(true, "Shade Background by HTF Trend", group=grpDisp)
+showTable   = input.bool(true, "Show Analysis Panel", group=grpDisp)
+showStats   = input.bool(true, "Show Historical Win-Rate Stats", group=grpDisp)
+showTrendBg = input.bool(true, "Shade Background by HTF Trend", group=grpDisp)
+markHistory = input.bool(true, "Mark EVERY historical setup on the chart (comb through the whole chart)", group=grpDisp)
+showLabels  = input.bool(true, "Show detailed Entry/SL/TP label on each setup", group=grpDisp)
 
 // ============================================================================
 // MULTI-TIMEFRAME DATA (non-repainting: confirmed HTF values only)
@@ -175,7 +177,10 @@ buildLevels(dir) =>
 // ---- OPEN a new trade (inline; Pine functions cannot reassign globals) ----
 newDir = longTrigger ? 1 : shortTrigger ? -1 : 0
 if newDir != 0
-    deleteDrawings()
+    // When markHistory is off, wipe the previous setup so only the latest shows.
+    // When on, leave every past setup frozen on the chart.
+    if not markHistory
+        deleteDrawings()
     entryPrice := close
     [sl, risk] = buildLevels(newDir)
     slPrice  := sl
@@ -204,7 +209,8 @@ if newDir != 0
     gBot = newDir == 1 ? entryPrice : tp3
     riskBox   := box.new(bar_index, rTop, bar_index, rBot, border_color=color.new(color.white, 100), bgcolor=color.new(color.red, 88))
     rewardBox := box.new(bar_index, gTop, bar_index, gBot, border_color=color.new(color.white, 100), bgcolor=color.new(color.green, 90))
-    infoLabel := label.new(bar_index, slPrice, txt, style=lblStyle, color=color.new(color.blue, 0), textcolor=color.white, size=size.small)
+    if showLabels
+        infoLabel := label.new(bar_index, slPrice, txt, style=lblStyle, color=color.new(color.blue, 0), textcolor=color.white, size=size.small)
 
     alert((newDir == 1 ? "LONG" : "SHORT") + " " + syminfo.ticker + " @ " + str.tostring(entryPrice, format.mintick) + " | SL " + str.tostring(slPrice, format.mintick) + " | TP1 " + str.tostring(tp1, format.mintick) + " | TP2 " + str.tostring(tp2, format.mintick) + " | TP3 " + str.tostring(tp3, format.mintick) + " | score " + str.tostring(scoreNow) + "/6", alert.freq_once_per_bar_close)
 
@@ -279,6 +285,14 @@ if not na(exitPx)
     else if r < -0.0001
         losses += 1
     label.new(bar_index, exitPx, exitTag + " (" + str.tostring(r, "#.##") + "R)", style=exitUp ? label.style_label_up : label.style_label_down, color=exitCol, textcolor=color.white, size=size.small)
+    // Freeze this setup's drawings at the exit bar so it stays marked on the chart
+    line.set_x2(entryLine, bar_index)
+    line.set_x2(slLine, bar_index)
+    line.set_x2(tp1Line, bar_index)
+    line.set_x2(tp2Line, bar_index)
+    line.set_x2(tp3Line, bar_index)
+    box.set_right(riskBox, bar_index)
+    box.set_right(rewardBox, bar_index)
     tradeDir := 0
 
 // Keep drawings extending & reflect a moved stop
