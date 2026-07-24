@@ -62,12 +62,32 @@ On every signal:
 - The setup closes at **TP3**, at the (possibly moved) **stop**, or on **expiry**,
   stamping a `TP3` / `SL` / `EXIT+` / `EXPIRED` label with the realized R multiple.
 
-### Performance panel
+### Analysis panel
 
-The top-right panel shows live bias for each timeframe, RSI, ADX, both scores, the
-active trade's levels — and **historical win-rate, W/L count, average R, and total
-R** for every signal the script produced on that chart. This lets you judge the
-signal's real edge on your instrument before trusting it live.
+The top-right panel shows live bias for each timeframe, RSI, ADX, both confluence
+scores, and the active trade's levels — the current state of the market.
+
+### Performance dashboard
+
+A separate dashboard (position configurable — bottom-right by default) reports the
+real, historical edge of the signals on that chart:
+
+| Metric | Meaning |
+|---|---|
+| Win Rate | % of resolved setups that closed positive |
+| Wins / Losses | count, plus breakeven (BE) exits |
+| Profit Factor | gross winning R ÷ gross losing R (>1 = profitable) |
+| Expectancy | average R gained per trade |
+| Net Result | total R banked across all setups |
+| Avg Win / Loss | average R of winners vs. losers |
+| Best / Worst | largest single win and loss in R |
+| Long W/L | long-only record and win % |
+| Short W/L | short-only record and win % |
+| Max Win/Loss Streak | longest consecutive runs |
+| Current Streak | active streak |
+
+This lets you judge the strategy's real edge on your instrument and timeframe
+before trusting it live.
 
 ## Installing on TradingView
 

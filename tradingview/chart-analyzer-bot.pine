@@ -44,7 +44,8 @@ expiryBars = input.int(100, "Invalidate Unresolved Setup After N Bars (0 = never
 useCandles = input.bool(true, "Require Candlestick Confirmation", group=grpCandle)
 
 showTable   = input.bool(true, "Show Analysis Panel", group=grpDisp)
-showStats   = input.bool(true, "Show Historical Win-Rate Stats", group=grpDisp)
+showDash    = input.bool(true, "Show Performance Dashboard", group=grpDisp)
+dashPosStr  = input.string("Bottom Right", "Dashboard Position", options=["Bottom Right", "Bottom Left", "Top Left", "Middle Right"], group=grpDisp)
 showTrendBg = input.bool(true, "Shade Background by HTF Trend", group=grpDisp)
 markHistory = input.bool(true, "Mark EVERY historical setup on the chart (comb through the whole chart)", group=grpDisp)
 showLabels  = input.bool(true, "Show detailed Entry/SL/TP label on each setup", group=grpDisp)
@@ -137,10 +138,22 @@ var box   rewardBox = na
 var label infoLabel = na
 
 // Performance tracking
-var int   totalTrades = 0
-var int   wins        = 0
-var int   losses      = 0
-var float sumR        = 0.0
+var int   totalTrades   = 0
+var int   wins          = 0
+var int   losses        = 0
+var int   scratches     = 0
+var float sumR          = 0.0
+var float grossWinR     = 0.0
+var float grossLossR    = 0.0
+var int   longWins      = 0
+var int   longLosses    = 0
+var int   shortWins     = 0
+var int   shortLosses   = 0
+var float bestR         = na
+var float worstR        = na
+var int   curStreak     = 0    // >0 = win streak, <0 = loss streak
+var int   maxWinStreak  = 0
+var int   maxLossStreak = 0
 
 // Confirmed pivots (offset by pivotLen — these are historical, non-repainting)
 pivLow  = ta.pivotlow(low, pivotLen, pivotLen)
@@ -280,10 +293,25 @@ if not na(exitPx)
     r = tradeDir == 1 ? (exitPx - entryPrice) / initRisk : (entryPrice - exitPx) / initRisk
     totalTrades += 1
     sumR += r
+    bestR := na(bestR) ? r : math.max(bestR, r)
+    worstR := na(worstR) ? r : math.min(worstR, r)
     if r > 0.0001
         wins += 1
+        grossWinR += r
+        longWins := tradeDir == 1 ? longWins + 1 : longWins
+        shortWins := tradeDir == -1 ? shortWins + 1 : shortWins
+        curStreak := curStreak > 0 ? curStreak + 1 : 1
+        maxWinStreak := math.max(maxWinStreak, curStreak)
     else if r < -0.0001
         losses += 1
+        grossLossR += -r
+        longLosses := tradeDir == 1 ? longLosses + 1 : longLosses
+        shortLosses := tradeDir == -1 ? shortLosses + 1 : shortLosses
+        curStreak := curStreak < 0 ? curStreak - 1 : -1
+        maxLossStreak := math.max(maxLossStreak, -curStreak)
+    else
+        scratches += 1
+        curStreak := 0
     label.new(bar_index, exitPx, exitTag + " (" + str.tostring(r, "#.##") + "R)", style=exitUp ? label.style_label_up : label.style_label_down, color=exitCol, textcolor=color.white, size=size.small)
     // Freeze this setup's drawings at the exit bar so it stays marked on the chart
     line.set_x2(entryLine, bar_index)
@@ -320,7 +348,7 @@ bgcolor(showTrendBg ? (htfBias == 1 ? color.new(color.green, 94) : htfBias == -1
 // ============================================================================
 // ANALYSIS PANEL
 // ============================================================================
-var table infoTable = table.new(position.top_right, 2, 12, border_width=1)
+var table infoTable = table.new(position.top_right, 2, 10, border_width=1)
 
 winPct = (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0.0
 avgR   = totalTrades > 0 ? sumR / totalTrades : 0.0
@@ -356,11 +384,40 @@ if showTable and barstate.islast
     table.cell(infoTable, 0, 9, "TP1 / TP2 / TP3", text_size=size.small)
     table.cell(infoTable, 1, 9, tradeDir != 0 ? str.tostring(tp1, format.mintick) + " / " + str.tostring(tp2, format.mintick) + " / " + str.tostring(tp3, format.mintick) : "-", text_size=size.small)
 
-    if showStats
-        table.cell(infoTable, 0, 10, "Win Rate (hist.)", text_size=size.small)
-        table.cell(infoTable, 1, 10, str.tostring(winPct, "#.#") + "%  (" + str.tostring(wins) + "W/" + str.tostring(losses) + "L)", text_color=winPct >= 50 ? color.green : color.red, text_size=size.small)
-        table.cell(infoTable, 0, 11, "Avg R / Total R", text_size=size.small)
-        table.cell(infoTable, 1, 11, str.tostring(avgR, "#.##") + "R  /  " + str.tostring(sumR, "#.#") + "R", text_color=sumR >= 0 ? color.green : color.red, text_size=size.small)
+// ============================================================================
+// PERFORMANCE DASHBOARD
+// ============================================================================
+dashPos = dashPosStr == "Bottom Left" ? position.bottom_left : dashPosStr == "Top Left" ? position.top_left : dashPosStr == "Middle Right" ? position.middle_right : position.bottom_right
+var table dash = table.new(dashPos, 2, 12, border_width=1, frame_width=1, frame_color=color.new(color.gray, 40))
+
+pfStr    = grossLossR > 0 ? str.tostring(grossWinR / grossLossR, "#.##") : (grossWinR > 0 ? "∞" : "-")
+avgWin   = wins > 0 ? grossWinR / wins : 0.0
+avgLoss  = losses > 0 ? grossLossR / losses : 0.0
+longTot  = longWins + longLosses
+shortTot = shortWins + shortLosses
+longPct  = longTot > 0 ? longWins / longTot * 100 : 0.0
+shortPct = shortTot > 0 ? shortWins / shortTot * 100 : 0.0
+streakStr = curStreak > 0 ? str.tostring(curStreak) + "W" : curStreak < 0 ? str.tostring(-curStreak) + "L" : "-"
+pfGood   = grossLossR > 0 and (grossWinR / grossLossR) >= 1.0
+
+dashCell(row, k, v, vcol) =>
+    table.cell(dash, 0, row, k, text_color=color.new(color.gray, 0), text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, row, v, text_color=vcol, text_size=size.small, text_halign=text.align_right)
+
+if showDash and barstate.islast
+    table.cell(dash, 0, 0, "PERFORMANCE", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 0, str.tostring(totalTrades) + " trades", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small, text_halign=text.align_right)
+    dashCell(1, "Win Rate", str.tostring(winPct, "#.#") + "%", winPct >= 50 ? color.green : color.red)
+    dashCell(2, "Wins / Losses", str.tostring(wins) + "W / " + str.tostring(losses) + "L" + (scratches > 0 ? " / " + str.tostring(scratches) + "BE" : ""), color.new(color.silver, 0))
+    dashCell(3, "Profit Factor", pfStr, pfGood ? color.green : grossLossR > 0 ? color.red : color.silver)
+    dashCell(4, "Expectancy", str.tostring(avgR, "#.##") + "R / trade", avgR >= 0 ? color.green : color.red)
+    dashCell(5, "Net Result", str.tostring(sumR, "#.#") + "R", sumR >= 0 ? color.green : color.red)
+    dashCell(6, "Avg Win / Loss", "+" + str.tostring(avgWin, "#.##") + "R / -" + str.tostring(avgLoss, "#.##") + "R", color.new(color.silver, 0))
+    dashCell(7, "Best / Worst", (na(bestR) ? "-" : str.tostring(bestR, "#.##") + "R") + " / " + (na(worstR) ? "-" : str.tostring(worstR, "#.##") + "R"), color.new(color.silver, 0))
+    dashCell(8, "Long W/L", str.tostring(longWins) + "/" + str.tostring(longLosses) + "  (" + str.tostring(longPct, "#.#") + "%)", longPct >= 50 ? color.green : color.red)
+    dashCell(9, "Short W/L", str.tostring(shortWins) + "/" + str.tostring(shortLosses) + "  (" + str.tostring(shortPct, "#.#") + "%)", shortPct >= 50 ? color.green : color.red)
+    dashCell(10, "Max Win/Loss Streak", str.tostring(maxWinStreak) + "W / " + str.tostring(maxLossStreak) + "L", color.new(color.silver, 0))
+    dashCell(11, "Current Streak", streakStr, curStreak > 0 ? color.green : curStreak < 0 ? color.red : color.silver)
 
 // ============================================================================
 // ALERTS
