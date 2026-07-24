@@ -20,7 +20,7 @@ slowLen  = input.int(50, "Slow EMA (entry TF)", group=grpEntry)
 rsiLen   = input.int(14, "RSI Length",           group=grpEntry)
 rsiOB    = input.int(70, "RSI Overbought",       group=grpEntry)
 rsiOS    = input.int(30, "RSI Oversold",         group=grpEntry)
-minScore = input.int(5, "Minimum Confluence Score (1-6) to Trigger", minval=1, maxval=6, group=grpEntry)
+minScore = input.int(4, "Minimum Confluence Score (1-6) to Trigger", minval=1, maxval=6, group=grpEntry)
 tradeMode = input.string("Both", "Trade Direction", options=["Both", "Long Only", "Short Only"], group=grpEntry)
 allowLong  = tradeMode != "Short Only"
 allowShort = tradeMode != "Long Only"
@@ -214,7 +214,7 @@ if newDir != 0
 
     scoreNow = newDir == 1 ? longScore : shortScore
     lblStyle = newDir == 1 ? label.style_label_up : label.style_label_down
-    txt = (newDir == 1 ? "LONG" : "SHORT") + "  (score " + str.tostring(scoreNow) + "/6, ADX " + str.tostring(adxVal, "#.#") + ")" + "\nEntry: " + str.tostring(entryPrice, format.mintick) + "\nSL:  " + str.tostring(slPrice, format.mintick) + "  (" + str.tostring(risk, format.mintick) + " risk)" + "\nTP1: " + str.tostring(tp1, format.mintick) + "\nTP2: " + str.tostring(tp2, format.mintick) + "\nTP3: " + str.tostring(tp3, format.mintick)
+    txt = (newDir == 1 ? "▲ BUY / ENTER LONG" : "▼ SELL / ENTER SHORT") + "  (score " + str.tostring(scoreNow) + "/6, ADX " + str.tostring(adxVal, "#.#") + ")" + "\nEntry: " + str.tostring(entryPrice, format.mintick) + "\nSL:  " + str.tostring(slPrice, format.mintick) + "  (" + str.tostring(risk, format.mintick) + " risk)" + "\nTP1: " + str.tostring(tp1, format.mintick) + "\nTP2: " + str.tostring(tp2, format.mintick) + "\nTP3: " + str.tostring(tp3, format.mintick)
 
     entryLine := line.new(bar_index, entryPrice, bar_index, entryPrice, color=color.new(color.blue, 0),  style=line.style_solid,  width=2)
     slLine    := line.new(bar_index, slPrice,    bar_index, slPrice,    color=color.new(color.red, 0),   style=line.style_dashed, width=1)
@@ -246,6 +246,7 @@ if tradeDir == 1 and canManage
         if useBE
             slPrice := math.max(slPrice, entryPrice)
         label.new(bar_index, tp1, "TP1", style=label.style_label_down, color=color.new(color.green, 30), textcolor=color.white, size=size.tiny)
+        alert("TP1 hit — LONG " + syminfo.ticker + " @ " + str.tostring(tp1, format.mintick) + (useBE ? ". Move stop to breakeven." : "."), alert.freq_once_per_bar_close)
     if not tp2Hit and high >= tp2
         tp2Hit := true
         slPrice := math.max(slPrice, tp1)
@@ -274,6 +275,7 @@ if tradeDir == -1 and canManage
         if useBE
             slPrice := math.min(slPrice, entryPrice)
         label.new(bar_index, tp1, "TP1", style=label.style_label_up, color=color.new(color.green, 30), textcolor=color.white, size=size.tiny)
+        alert("TP1 hit — SHORT " + syminfo.ticker + " @ " + str.tostring(tp1, format.mintick) + (useBE ? ". Move stop to breakeven." : "."), alert.freq_once_per_bar_close)
     if not tp2Hit and low <= tp2
         tp2Hit := true
         slPrice := math.min(slPrice, tp1)
@@ -319,7 +321,9 @@ if not na(exitPx)
     else
         scratches += 1
         curStreak := 0
-    label.new(bar_index, exitPx, exitTag + " (" + str.tostring(r, "#.##") + "R)", style=exitUp ? label.style_label_up : label.style_label_down, color=exitCol, textcolor=color.white, size=size.small)
+    exitWord = exitTag == "TP3" ? "✖ EXIT — TP HIT" : exitTag == "SL" ? "✖ EXIT — STOP HIT" : exitTag == "EXIT+" ? "✖ EXIT — stop (in profit)" : "✖ EXIT — expired"
+    label.new(bar_index, exitPx, exitWord + " (" + str.tostring(r, "#.##") + "R)", style=exitUp ? label.style_label_up : label.style_label_down, color=exitCol, textcolor=color.white, size=size.small)
+    alert("CLOSE " + (tradeDir == 1 ? "LONG" : "SHORT") + " " + syminfo.ticker + " @ " + str.tostring(exitPx, format.mintick) + " — " + exitTag + " (" + str.tostring(r, "#.##") + "R). Close the position now.", alert.freq_once_per_bar_close)
     // Freeze this setup's drawings at the exit bar so it stays marked on the chart
     line.set_x2(entryLine, bar_index)
     line.set_x2(slLine, bar_index)
@@ -360,9 +364,13 @@ var table infoTable = table.new(position.top_right, 2, 10, border_width=1)
 winPct = (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0.0
 avgR   = totalTrades > 0 ? sumR / totalTrades : 0.0
 
+// What to do right now — the actionable readout
+actionText = not na(exitPx) ? "EXIT NOW (" + exitTag + ")" : longTrigger ? "BUY / ENTER LONG NOW" : shortTrigger ? "SELL / ENTER SHORT NOW" : tradeDir == 1 ? "IN LONG — hold, stop " + str.tostring(slPrice, format.mintick) : tradeDir == -1 ? "IN SHORT — hold, stop " + str.tostring(slPrice, format.mintick) : "WAIT — no valid setup"
+actionCol  = not na(exitPx) ? color.orange : (longTrigger or tradeDir == 1) ? color.green : (shortTrigger or tradeDir == -1) ? color.red : color.gray
+
 if showTable and barstate.islast
-    table.cell(infoTable, 0, 0, "Chart Analyzer", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small)
-    table.cell(infoTable, 1, 0, "", bgcolor=color.new(color.blue, 0))
+    table.cell(infoTable, 0, 0, "ACTION", text_color=color.white, bgcolor=actionCol, text_size=size.small)
+    table.cell(infoTable, 1, 0, actionText, text_color=color.white, bgcolor=actionCol, text_size=size.small)
 
     table.cell(infoTable, 0, 1, "HTF Bias (" + htf1 + ")", text_size=size.small)
     table.cell(infoTable, 1, 1, htfBias == 1 ? "Bullish" : htfBias == -1 ? "Bearish" : "Flat", text_color=htfBias == 1 ? color.green : htfBias == -1 ? color.red : color.gray, text_size=size.small)

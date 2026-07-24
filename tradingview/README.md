@@ -94,6 +94,25 @@ real, historical edge of the signals on that chart:
 This lets you judge the strategy's real edge on your instrument and timeframe
 before trusting it live.
 
+## How to read "when to enter / when to exit"
+
+The script tells you in three places:
+
+1. **On the chart** — a green ▲ triangle + a **"BUY / ENTER LONG"** label (or red ▼
+   **"SELL / ENTER SHORT"**) appears at the entry bar, with the exact Entry, Stop and
+   TP1/TP2/TP3 prices. When the trade finishes, an **"EXIT — TP HIT"** or
+   **"EXIT — STOP HIT"** label is stamped at the close.
+2. **The ACTION row** at the top of the analysis panel always says what to do *right
+   now*: `BUY / ENTER LONG NOW`, `SELL / ENTER SHORT NOW`, `IN LONG — hold, stop …`,
+   `EXIT NOW (…)`, or `WAIT — no valid setup`.
+3. **Alerts** (if you set them up) — you get a message on entry (with all levels),
+   when **TP1** is hit (move stop to breakeven), and on **exit** ("Close the
+   position now").
+
+**Not seeing any signals?** The filters are strict by design. If the dashboard shows
+0 trades, loosen them in Settings: lower **Minimum Confluence Score** (try 3),
+lower **Minimum ADX** (try 15), or turn off **Require Candlestick Confirmation**.
+
 ## Installing on TradingView
 
 1. Open any chart → **Pine Editor** tab (bottom panel).
