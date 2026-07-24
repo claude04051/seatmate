@@ -1,11 +1,12 @@
 //@version=5
-indicator("Multi-Timeframe Chart Analyzer & Trade Signal Bot", overlay=true, max_lines_count=200, max_labels_count=200, max_boxes_count=200)
+indicator("Multi-Timeframe Chart Analyzer & Trade Signal Bot", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
 
 // ============================================================================
 // INPUTS
 // ============================================================================
 grpMTF    = "Multi-Timeframe Trend"
 grpEntry  = "Entry Trigger (Chart Timeframe)"
+grpFilter = "Precision Filters"
 grpRisk   = "Risk Management"
 grpCandle = "Candlestick Confirmation"
 grpDisp   = "Display / Alerts"
@@ -19,38 +20,58 @@ slowLen  = input.int(50, "Slow EMA (entry TF)", group=grpEntry)
 rsiLen   = input.int(14, "RSI Length",           group=grpEntry)
 rsiOB    = input.int(70, "RSI Overbought",       group=grpEntry)
 rsiOS    = input.int(30, "RSI Oversold",         group=grpEntry)
-minScore = input.int(4, "Minimum Confluence Score (1-5) to Trigger", minval=1, maxval=5, group=grpEntry)
+minScore = input.int(5, "Minimum Confluence Score (1-6) to Trigger", minval=1, maxval=6, group=grpEntry)
 
-atrLen    = input.int(14, "ATR Length", group=grpRisk)
-slMult    = input.float(1.5, "Stop Loss ATR Multiplier", step=0.1, group=grpRisk)
-rrRatio   = input.float(2.0, "Reward:Risk Ratio", step=0.1, group=grpRisk)
-useSwing  = input.bool(true, "Use Swing High/Low for Stop Loss (wider of swing vs ATR)", group=grpRisk)
-swingLen  = input.int(10, "Swing Lookback Length", group=grpRisk)
-expiryBars= input.int(100, "Invalidate Untriggered/Unhit Setup After N Bars (0 = never)", group=grpRisk)
+useAdx     = input.bool(true, "Require Trend Strength (ADX gate)", group=grpFilter)
+adxLen     = input.int(14, "ADX / DMI Length", group=grpFilter)
+adxMin     = input.float(20.0, "Minimum ADX", step=1.0, group=grpFilter)
+useVol     = input.bool(true, "Score Volume Confirmation", group=grpFilter)
+volLen     = input.int(20, "Volume Average Length", group=grpFilter)
+useHtfConf = input.bool(true, "Require Mid-TF Agreement (not just macro)", group=grpFilter)
+
+atrLen     = input.int(14, "ATR Length", group=grpRisk)
+slMult     = input.float(1.5, "Stop Loss ATR Multiplier", step=0.1, group=grpRisk)
+useSwing   = input.bool(true, "Anchor Stop to Pivot Swing (wider of pivot vs ATR)", group=grpRisk)
+pivotLen   = input.int(5, "Pivot Lookback (left/right bars)", group=grpRisk)
+tp1R       = input.float(1.0, "TP1 (R multiple)", step=0.1, group=grpRisk)
+tp2R       = input.float(2.0, "TP2 (R multiple)", step=0.1, group=grpRisk)
+tp3R       = input.float(3.0, "TP3 / Final (R multiple)", step=0.1, group=grpRisk)
+useBE      = input.bool(true, "Move Stop to Breakeven after TP1", group=grpRisk)
+useTrail   = input.bool(true, "ATR Trail Stop after TP2", group=grpRisk)
+trailMult  = input.float(2.0, "Trail ATR Multiplier", step=0.1, group=grpRisk)
+expiryBars = input.int(100, "Invalidate Unresolved Setup After N Bars (0 = never)", group=grpRisk)
 
 useCandles = input.bool(true, "Require Candlestick Confirmation", group=grpCandle)
 
 showTable  = input.bool(true, "Show Analysis Panel", group=grpDisp)
+showStats  = input.bool(true, "Show Historical Win-Rate Stats", group=grpDisp)
 showTrendBg= input.bool(true, "Shade Background by HTF Trend", group=grpDisp)
 
 // ============================================================================
-// MULTI-TIMEFRAME DATA
+// MULTI-TIMEFRAME DATA (non-repainting: confirmed HTF values only)
 // ============================================================================
-htfClose = request.security(syminfo.tickerid, htf1, close, lookahead=barmerge.lookahead_off)
-htfEMA   = request.security(syminfo.tickerid, htf1, ta.ema(close, emaTrendLen), lookahead=barmerge.lookahead_off)
+htfClose = request.security(syminfo.tickerid, htf1, close[barstate.isrealtime ? 1 : 0], lookahead=barmerge.lookahead_off)
+htfEMA   = request.security(syminfo.tickerid, htf1, ta.ema(close, emaTrendLen)[barstate.isrealtime ? 1 : 0], lookahead=barmerge.lookahead_off)
 htfBias  = htfClose > htfEMA ? 1 : htfClose < htfEMA ? -1 : 0
 
-midEmaFast = request.security(syminfo.tickerid, htf2, ta.ema(close, fastLen), lookahead=barmerge.lookahead_off)
-midEmaSlow = request.security(syminfo.tickerid, htf2, ta.ema(close, slowLen), lookahead=barmerge.lookahead_off)
+midEmaFast = request.security(syminfo.tickerid, htf2, ta.ema(close, fastLen)[barstate.isrealtime ? 1 : 0], lookahead=barmerge.lookahead_off)
+midEmaSlow = request.security(syminfo.tickerid, htf2, ta.ema(close, slowLen)[barstate.isrealtime ? 1 : 0], lookahead=barmerge.lookahead_off)
 midBias    = midEmaFast > midEmaSlow ? 1 : midEmaFast < midEmaSlow ? -1 : 0
 
 // ============================================================================
-// CHART-TIMEFRAME TREND / MOMENTUM / VOLATILITY
+// CHART-TIMEFRAME TREND / MOMENTUM / VOLATILITY / STRENGTH
 // ============================================================================
 emaFast = ta.ema(close, fastLen)
 emaSlow = ta.ema(close, slowLen)
 rsiVal  = ta.rsi(close, rsiLen)
 atrVal  = ta.atr(atrLen)
+
+[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+adxOk = not useAdx or adxVal >= adxMin
+
+volAvg = ta.sma(volume, volLen)
+volDataOk = not na(volAvg) and volAvg > 0
+volOk = not volDataOk or volume > volAvg   // pass automatically if symbol has no volume
 
 localBias = emaFast > emaSlow ? 1 : -1
 
@@ -72,116 +93,204 @@ bullCandle = bullEngulf or hammer
 bearCandle = bearEngulf or shootingStar
 
 // ============================================================================
-// CONFLUENCE SCORING
+// CONFLUENCE SCORING (0-6)
 // ============================================================================
-longScore  = (htfBias == 1 ? 1 : 0) + (midBias == 1 ? 1 : 0) + (localBias == 1 ? 1 : 0) + \
-             (rsiVal > 40 and rsiVal < rsiOB ? 1 : 0) + ((not useCandles) or bullCandle ? 1 : 0)
+longScore = 0
+longScore += htfBias == 1 ? 1 : 0
+longScore += (useHtfConf ? midBias == 1 : true) ? 1 : 0
+longScore += localBias == 1 ? 1 : 0
+longScore += (rsiVal > 45 and rsiVal < rsiOB) ? 1 : 0
+longScore += ((not useCandles) or bullCandle) ? 1 : 0
+longScore += ((not useVol) or volOk) ? 1 : 0
 
-shortScore = (htfBias == -1 ? 1 : 0) + (midBias == -1 ? 1 : 0) + (localBias == -1 ? 1 : 0) + \
-             (rsiVal < 60 and rsiVal > rsiOS ? 1 : 0) + ((not useCandles) or bearCandle ? 1 : 0)
+shortScore = 0
+shortScore += htfBias == -1 ? 1 : 0
+shortScore += (useHtfConf ? midBias == -1 : true) ? 1 : 0
+shortScore += localBias == -1 ? 1 : 0
+shortScore += (rsiVal < 55 and rsiVal > rsiOS) ? 1 : 0
+shortScore += ((not useCandles) or bearCandle) ? 1 : 0
+shortScore += ((not useVol) or volOk) ? 1 : 0
 
 // ============================================================================
 // TRADE STATE
 // ============================================================================
-var int   tradeDir     = 0     // 0 = flat, 1 = long, -1 = short
-var float entryPrice   = na
-var float slPrice      = na
-var float tpPrice      = na
-var int   entryBarIdx  = na
+var int   tradeDir    = 0     // 0 flat, 1 long, -1 short
+var float entryPrice  = na
+var float slPrice     = na
+var float initRisk    = na
+var float tp1         = na
+var float tp2         = na
+var float tp3         = na
+var bool  tp1Hit      = false
+var bool  tp2Hit      = false
+var int   entryBarIdx = na
 
 var line  entryLine = na
 var line  slLine    = na
-var line  tpLine    = na
+var line  tp1Line   = na
+var line  tp2Line   = na
+var line  tp3Line   = na
 var box   riskBox   = na
 var box   rewardBox = na
 var label infoLabel = na
 
-swingLow  = ta.lowest(low, swingLen)
-swingHigh = ta.highest(high, swingLen)
+// Performance tracking
+var int   totalTrades = 0
+var int   wins        = 0
+var int   losses      = 0
+var float sumR        = 0.0
 
-longTrigger  = tradeDir == 0 and ta.crossover(emaFast, emaSlow)  and htfBias == 1  and longScore  >= minScore and barstate.isconfirmed
-shortTrigger = tradeDir == 0 and ta.crossunder(emaFast, emaSlow) and htfBias == -1 and shortScore >= minScore and barstate.isconfirmed
+// Confirmed pivots (offset by pivotLen — these are historical, non-repainting)
+pivLow  = ta.pivotlow(low, pivotLen, pivotLen)
+pivHigh = ta.pivothigh(high, pivotLen, pivotLen)
+var float lastPivLow  = na
+var float lastPivHigh = na
+if not na(pivLow)
+    lastPivLow := pivLow
+if not na(pivHigh)
+    lastPivHigh := pivHigh
+
+longTrigger  = tradeDir == 0 and ta.crossover(emaFast, emaSlow)  and htfBias == 1  and adxOk and longScore  >= minScore and barstate.isconfirmed
+shortTrigger = tradeDir == 0 and ta.crossunder(emaFast, emaSlow) and htfBias == -1 and adxOk and shortScore >= minScore and barstate.isconfirmed
 
 deleteDrawings() =>
-    if not na(entryLine)
-        line.delete(entryLine)
-    if not na(slLine)
-        line.delete(slLine)
-    if not na(tpLine)
-        line.delete(tpLine)
-    if not na(riskBox)
-        box.delete(riskBox)
-    if not na(rewardBox)
-        box.delete(rewardBox)
-    if not na(infoLabel)
-        label.delete(infoLabel)
+    line.delete(entryLine)
+    line.delete(slLine)
+    line.delete(tp1Line)
+    line.delete(tp2Line)
+    line.delete(tp3Line)
+    box.delete(riskBox)
+    box.delete(rewardBox)
+    label.delete(infoLabel)
 
-if longTrigger
+buildLevels(dir) =>
+    _atrSl  = dir == 1 ? close - atrVal * slMult : close + atrVal * slMult
+    _swing  = dir == 1 ? (na(lastPivLow) ? _atrSl : lastPivLow) : (na(lastPivHigh) ? _atrSl : lastPivHigh)
+    _sl     = useSwing ? (dir == 1 ? math.min(_swing, _atrSl) : math.max(_swing, _atrSl)) : _atrSl
+    _risk   = math.abs(close - _sl)
+    _sl := _risk <= 0 ? (dir == 1 ? close - atrVal * slMult : close + atrVal * slMult) : _sl
+    _risk := math.abs(close - _sl)
+    [_sl, _risk]
+
+// ---- OPEN a new trade (inline; Pine functions cannot reassign globals) ----
+newDir = longTrigger ? 1 : shortTrigger ? -1 : 0
+if newDir != 0
     deleteDrawings()
     entryPrice := close
-    rawSl = close - atrVal * slMult
-    slPrice := useSwing ? math.min(swingLow, rawSl) : rawSl
-    riskDist = entryPrice - slPrice
-    tpPrice := entryPrice + riskDist * rrRatio
-    tradeDir := 1
+    [sl, risk] = buildLevels(newDir)
+    slPrice  := sl
+    initRisk := risk
+    tp1 := newDir == 1 ? entryPrice + risk * tp1R : entryPrice - risk * tp1R
+    tp2 := newDir == 1 ? entryPrice + risk * tp2R : entryPrice - risk * tp2R
+    tp3 := newDir == 1 ? entryPrice + risk * tp3R : entryPrice - risk * tp3R
+    tp1Hit := false
+    tp2Hit := false
+    tradeDir := newDir
     entryBarIdx := bar_index
 
-    entryLine := line.new(bar_index, entryPrice, bar_index, entryPrice, color=color.new(color.blue, 0), style=line.style_dashed, width=1)
-    slLine    := line.new(bar_index, slPrice, bar_index, slPrice, color=color.new(color.red, 0), style=line.style_dashed, width=1)
-    tpLine    := line.new(bar_index, tpPrice, bar_index, tpPrice, color=color.new(color.green, 0), style=line.style_dashed, width=1)
-    riskBox   := box.new(bar_index, entryPrice, bar_index, slPrice, border_color=color.new(color.white, 100), bgcolor=color.new(color.red, 85))
-    rewardBox := box.new(bar_index, tpPrice, bar_index, entryPrice, border_color=color.new(color.white, 100), bgcolor=color.new(color.green, 85))
+    scoreNow = newDir == 1 ? longScore : shortScore
+    lblStyle = newDir == 1 ? label.style_label_up : label.style_label_down
+    txt = (newDir == 1 ? "LONG" : "SHORT") + "  (score " + str.tostring(scoreNow) + "/6, ADX " + str.tostring(adxVal, "#.#") + ")" + "\nEntry: " + str.tostring(entryPrice, format.mintick) + "\nSL:  " + str.tostring(slPrice, format.mintick) + "  (" + str.tostring(risk, format.mintick) + " risk)" + "\nTP1: " + str.tostring(tp1, format.mintick) + "\nTP2: " + str.tostring(tp2, format.mintick) + "\nTP3: " + str.tostring(tp3, format.mintick)
 
-    infoLabel := label.new(bar_index, slPrice, "LONG\nEntry: " + str.tostring(entryPrice, format.mintick) + "\nSL: " + str.tostring(slPrice, format.mintick) + "\nTP: " + str.tostring(tpPrice, format.mintick) + "\nScore: " + str.tostring(longScore) + "/5", style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.small)
+    entryLine := line.new(bar_index, entryPrice, bar_index, entryPrice, color=color.new(color.blue, 0),  style=line.style_solid,  width=2)
+    slLine    := line.new(bar_index, slPrice,    bar_index, slPrice,    color=color.new(color.red, 0),   style=line.style_dashed, width=1)
+    tp1Line   := line.new(bar_index, tp1,        bar_index, tp1,        color=color.new(color.green, 40), style=line.style_dotted, width=1)
+    tp2Line   := line.new(bar_index, tp2,        bar_index, tp2,        color=color.new(color.green, 20), style=line.style_dotted, width=1)
+    tp3Line   := line.new(bar_index, tp3,        bar_index, tp3,        color=color.new(color.green, 0),  style=line.style_dashed, width=1)
 
-if shortTrigger
-    deleteDrawings()
-    entryPrice := close
-    rawSl = close + atrVal * slMult
-    slPrice := useSwing ? math.max(swingHigh, rawSl) : rawSl
-    riskDist = slPrice - entryPrice
-    tpPrice := entryPrice - riskDist * rrRatio
-    tradeDir := -1
-    entryBarIdx := bar_index
+    rTop = newDir == 1 ? entryPrice : slPrice
+    rBot = newDir == 1 ? slPrice : entryPrice
+    gTop = newDir == 1 ? tp3 : entryPrice
+    gBot = newDir == 1 ? entryPrice : tp3
+    riskBox   := box.new(bar_index, rTop, bar_index, rBot, border_color=color.new(color.white, 100), bgcolor=color.new(color.red, 88))
+    rewardBox := box.new(bar_index, gTop, bar_index, gBot, border_color=color.new(color.white, 100), bgcolor=color.new(color.green, 90))
+    infoLabel := label.new(bar_index, slPrice, txt, style=lblStyle, color=color.new(color.blue, 0), textcolor=color.white, size=size.small)
 
-    entryLine := line.new(bar_index, entryPrice, bar_index, entryPrice, color=color.new(color.blue, 0), style=line.style_dashed, width=1)
-    slLine    := line.new(bar_index, slPrice, bar_index, slPrice, color=color.new(color.red, 0), style=line.style_dashed, width=1)
-    tpLine    := line.new(bar_index, tpPrice, bar_index, tpPrice, color=color.new(color.green, 0), style=line.style_dashed, width=1)
-    riskBox   := box.new(bar_index, slPrice, bar_index, entryPrice, border_color=color.new(color.white, 100), bgcolor=color.new(color.red, 85))
-    rewardBox := box.new(bar_index, entryPrice, bar_index, tpPrice, border_color=color.new(color.white, 100), bgcolor=color.new(color.green, 85))
+    alert((newDir == 1 ? "LONG" : "SHORT") + " " + syminfo.ticker + " @ " + str.tostring(entryPrice, format.mintick) + " | SL " + str.tostring(slPrice, format.mintick) + " | TP1 " + str.tostring(tp1, format.mintick) + " | TP2 " + str.tostring(tp2, format.mintick) + " | TP3 " + str.tostring(tp3, format.mintick) + " | score " + str.tostring(scoreNow) + "/6", alert.freq_once_per_bar_close)
 
-    infoLabel := label.new(bar_index, slPrice, "SHORT\nEntry: " + str.tostring(entryPrice, format.mintick) + "\nSL: " + str.tostring(slPrice, format.mintick) + "\nTP: " + str.tostring(tpPrice, format.mintick) + "\nScore: " + str.tostring(shortScore) + "/5", style=label.style_label_down, color=color.new(color.blue, 0), textcolor=color.white, size=size.small)
+// ---- MANAGE & RESOLVE active trade (exit decision collected, closed once) ----
+float exitPx  = na
+string exitTag = na
+color exitCol = na
+bool  exitUp  = false
 
-// Keep drawings extending while a trade is active
-if tradeDir != 0
-    line.set_x2(entryLine, bar_index)
-    line.set_x2(slLine, bar_index)
-    line.set_x2(tpLine, bar_index)
-    box.set_right(riskBox, bar_index)
-    box.set_right(rewardBox, bar_index)
-
-// Resolve trade: TP hit, SL hit, or expiry
 if tradeDir == 1
-    if high >= tpPrice
-        label.new(bar_index, tpPrice, "TP HIT", style=label.style_label_down, color=color.new(color.green, 0), textcolor=color.white, size=size.small)
-        tradeDir := 0
-    else if low <= slPrice
-        label.new(bar_index, slPrice, "SL HIT", style=label.style_label_up, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
-        tradeDir := 0
+    if not tp1Hit and high >= tp1
+        tp1Hit := true
+        if useBE
+            slPrice := math.max(slPrice, entryPrice)
+        label.new(bar_index, tp1, "TP1", style=label.style_label_down, color=color.new(color.green, 30), textcolor=color.white, size=size.tiny)
+    if not tp2Hit and high >= tp2
+        tp2Hit := true
+        slPrice := math.max(slPrice, tp1)
+        label.new(bar_index, tp2, "TP2", style=label.style_label_down, color=color.new(color.green, 15), textcolor=color.white, size=size.tiny)
+    if useTrail and tp2Hit
+        slPrice := math.max(slPrice, close - atrVal * trailMult)
+    if low <= slPrice
+        exitPx := slPrice
+        exitTag := slPrice >= entryPrice ? "EXIT+" : "SL"
+        exitCol := slPrice >= entryPrice ? color.new(color.gray, 0) : color.new(color.red, 0)
+        exitUp := true
+    else if high >= tp3
+        exitPx := tp3
+        exitTag := "TP3"
+        exitCol := color.new(color.green, 0)
+        exitUp := false
     else if expiryBars > 0 and (bar_index - entryBarIdx) > expiryBars
-        label.new(bar_index, entryPrice, "EXPIRED", style=label.style_label_left, color=color.new(color.gray, 0), textcolor=color.white, size=size.small)
-        tradeDir := 0
+        exitPx := close
+        exitTag := "EXPIRED"
+        exitCol := color.new(color.gray, 0)
+        exitUp := false
 
 if tradeDir == -1
-    if low <= tpPrice
-        label.new(bar_index, tpPrice, "TP HIT", style=label.style_label_up, color=color.new(color.green, 0), textcolor=color.white, size=size.small)
-        tradeDir := 0
-    else if high >= slPrice
-        label.new(bar_index, slPrice, "SL HIT", style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white, size=size.small)
-        tradeDir := 0
+    if not tp1Hit and low <= tp1
+        tp1Hit := true
+        if useBE
+            slPrice := math.min(slPrice, entryPrice)
+        label.new(bar_index, tp1, "TP1", style=label.style_label_up, color=color.new(color.green, 30), textcolor=color.white, size=size.tiny)
+    if not tp2Hit and low <= tp2
+        tp2Hit := true
+        slPrice := math.min(slPrice, tp1)
+        label.new(bar_index, tp2, "TP2", style=label.style_label_up, color=color.new(color.green, 15), textcolor=color.white, size=size.tiny)
+    if useTrail and tp2Hit
+        slPrice := math.min(slPrice, close + atrVal * trailMult)
+    if high >= slPrice
+        exitPx := slPrice
+        exitTag := slPrice <= entryPrice ? "EXIT+" : "SL"
+        exitCol := slPrice <= entryPrice ? color.new(color.gray, 0) : color.new(color.red, 0)
+        exitUp := false
+    else if low <= tp3
+        exitPx := tp3
+        exitTag := "TP3"
+        exitCol := color.new(color.green, 0)
+        exitUp := true
     else if expiryBars > 0 and (bar_index - entryBarIdx) > expiryBars
-        label.new(bar_index, entryPrice, "EXPIRED", style=label.style_label_left, color=color.new(color.gray, 0), textcolor=color.white, size=size.small)
-        tradeDir := 0
+        exitPx := close
+        exitTag := "EXPIRED"
+        exitCol := color.new(color.gray, 0)
+        exitUp := true
+
+if not na(exitPx)
+    r = tradeDir == 1 ? (exitPx - entryPrice) / initRisk : (entryPrice - exitPx) / initRisk
+    totalTrades += 1
+    sumR += r
+    if r > 0.0001
+        wins += 1
+    else if r < -0.0001
+        losses += 1
+    label.new(bar_index, exitPx, exitTag + " (" + str.tostring(r, "#.##") + "R)", style=exitUp ? label.style_label_up : label.style_label_down, color=exitCol, textcolor=color.white, size=size.small)
+    tradeDir := 0
+
+// Keep drawings extending & reflect a moved stop
+if tradeDir != 0
+    line.set_x2(entryLine, bar_index)
+    line.set_x2(tp1Line, bar_index)
+    line.set_x2(tp2Line, bar_index)
+    line.set_x2(tp3Line, bar_index)
+    line.set_xy1(slLine, entryBarIdx, slPrice)
+    line.set_xy2(slLine, bar_index, slPrice)
+    box.set_right(riskBox, bar_index)
+    box.set_right(rewardBox, bar_index)
 
 // ============================================================================
 // PLOTS
@@ -192,12 +301,15 @@ plot(emaSlow, "Slow EMA", color=color.new(color.orange, 0))
 plotshape(longTrigger,  title="Long Signal",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.green, 0), size=size.small)
 plotshape(shortTrigger, title="Short Signal", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),   size=size.small)
 
-bgcolor(showTrendBg ? (htfBias == 1 ? color.new(color.green, 92) : htfBias == -1 ? color.new(color.red, 92) : na) : na, title="HTF Trend Background")
+bgcolor(showTrendBg ? (htfBias == 1 ? color.new(color.green, 94) : htfBias == -1 ? color.new(color.red, 94) : na) : na, title="HTF Trend Background")
 
 // ============================================================================
 // ANALYSIS PANEL
 // ============================================================================
-var table infoTable = table.new(position.top_right, 2, 8, border_width=1)
+var table infoTable = table.new(position.top_right, 2, 12, border_width=1)
+
+winPct = (wins + losses) > 0 ? wins / (wins + losses) * 100 : 0.0
+avgR   = totalTrades > 0 ? sumR / totalTrades : 0.0
 
 if showTable and barstate.islast
     table.cell(infoTable, 0, 0, "Chart Analyzer", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small)
@@ -207,7 +319,7 @@ if showTable and barstate.islast
     table.cell(infoTable, 1, 1, htfBias == 1 ? "Bullish" : htfBias == -1 ? "Bearish" : "Flat", text_color=htfBias == 1 ? color.green : htfBias == -1 ? color.red : color.gray, text_size=size.small)
 
     table.cell(infoTable, 0, 2, "Mid Bias (" + htf2 + ")", text_size=size.small)
-    table.cell(infoTable, 1, 2, midBias == 1 ? "Bullish" : "Bearish", text_color=midBias == 1 ? color.green : color.red, text_size=size.small)
+    table.cell(infoTable, 1, 2, midBias == 1 ? "Bullish" : midBias == -1 ? "Bearish" : "Flat", text_color=midBias == 1 ? color.green : midBias == -1 ? color.red : color.gray, text_size=size.small)
 
     table.cell(infoTable, 0, 3, "Chart Bias", text_size=size.small)
     table.cell(infoTable, 1, 3, localBias == 1 ? "Bullish" : "Bearish", text_color=localBias == 1 ? color.green : color.red, text_size=size.small)
@@ -215,17 +327,31 @@ if showTable and barstate.islast
     table.cell(infoTable, 0, 4, "RSI", text_size=size.small)
     table.cell(infoTable, 1, 4, str.tostring(rsiVal, "#.##"), text_size=size.small)
 
-    table.cell(infoTable, 0, 5, "Long / Short Score", text_size=size.small)
-    table.cell(infoTable, 1, 5, str.tostring(longScore) + "/5  |  " + str.tostring(shortScore) + "/5", text_size=size.small)
+    table.cell(infoTable, 0, 5, "ADX (strength)", text_size=size.small)
+    table.cell(infoTable, 1, 5, str.tostring(adxVal, "#.#") + (adxOk ? " OK" : " weak"), text_color=adxOk ? color.green : color.gray, text_size=size.small)
 
-    table.cell(infoTable, 0, 6, "Active Trade", text_size=size.small)
-    table.cell(infoTable, 1, 6, tradeDir == 1 ? "LONG" : tradeDir == -1 ? "SHORT" : "None", text_color=tradeDir == 1 ? color.green : tradeDir == -1 ? color.red : color.gray, text_size=size.small)
+    table.cell(infoTable, 0, 6, "Long / Short Score", text_size=size.small)
+    table.cell(infoTable, 1, 6, str.tostring(longScore) + "/6  |  " + str.tostring(shortScore) + "/6", text_size=size.small)
 
-    table.cell(infoTable, 0, 7, "Entry / SL / TP", text_size=size.small)
-    table.cell(infoTable, 1, 7, tradeDir != 0 ? str.tostring(entryPrice, format.mintick) + " / " + str.tostring(slPrice, format.mintick) + " / " + str.tostring(tpPrice, format.mintick) : "-", text_size=size.small)
+    table.cell(infoTable, 0, 7, "Active Trade", text_size=size.small)
+    table.cell(infoTable, 1, 7, tradeDir == 1 ? "LONG" : tradeDir == -1 ? "SHORT" : "None", text_color=tradeDir == 1 ? color.green : tradeDir == -1 ? color.red : color.gray, text_size=size.small)
+
+    table.cell(infoTable, 0, 8, "Entry / Stop", text_size=size.small)
+    table.cell(infoTable, 1, 8, tradeDir != 0 ? str.tostring(entryPrice, format.mintick) + " / " + str.tostring(slPrice, format.mintick) : "-", text_size=size.small)
+
+    table.cell(infoTable, 0, 9, "TP1 / TP2 / TP3", text_size=size.small)
+    table.cell(infoTable, 1, 9, tradeDir != 0 ? str.tostring(tp1, format.mintick) + " / " + str.tostring(tp2, format.mintick) + " / " + str.tostring(tp3, format.mintick) : "-", text_size=size.small)
+
+    if showStats
+        table.cell(infoTable, 0, 10, "Win Rate (hist.)", text_size=size.small)
+        table.cell(infoTable, 1, 10, str.tostring(winPct, "#.#") + "%  (" + str.tostring(wins) + "W/" + str.tostring(losses) + "L)", text_color=winPct >= 50 ? color.green : color.red, text_size=size.small)
+        table.cell(infoTable, 0, 11, "Avg R / Total R", text_size=size.small)
+        table.cell(infoTable, 1, 11, str.tostring(avgR, "#.##") + "R  /  " + str.tostring(sumR, "#.#") + "R", text_color=sumR >= 0 ? color.green : color.red, text_size=size.small)
 
 // ============================================================================
 // ALERTS
+//   - alert() fires rich messages (with live Entry/SL/TP) when a trade opens.
+//   - alertcondition() below powers the classic "Create Alert from indicator" dialog.
 // ============================================================================
-alertcondition(longTrigger,  title="Long Entry Signal",  message="LONG signal on {{ticker}} @ {{close}} — check chart for SL/TP")
-alertcondition(shortTrigger, title="Short Entry Signal",  message="SHORT signal on {{ticker}} @ {{close}} — check chart for SL/TP")
+alertcondition(longTrigger,  title="Long Entry Signal",  message="LONG signal on {{ticker}} @ {{close}} — see chart for SL/TP levels")
+alertcondition(shortTrigger, title="Short Entry Signal",  message="SHORT signal on {{ticker}} @ {{close}} — see chart for SL/TP levels")
