@@ -1,4 +1,44 @@
-# Multi-Timeframe Chart Analyzer & Trade Signal Bot (TradingView Pine Script v5)
+# TradingView Chart Analyzer — two versions
+
+| File | Use it if you want |
+|---|---|
+| **`simple-entry-sl-tp.pine`** ← **start here** | Just three lines on the chart: **entry, stop loss, take profit**. Nothing else. |
+| `chart-analyzer-bot.pine` | The full version: multi-timeframe scoring, historical setups, performance dashboard. |
+
+---
+
+# 1. Simple Entry / SL / TP  (`simple-entry-sl-tp.pine`)
+
+Reads whatever timeframe the chart is showing — daily, weekly, monthly, intraday —
+works out the trend from that same timeframe, and projects **one current setup**.
+
+**What it draws — and this is all it draws:**
+
+- **Blue line — LONG ENTRY / SHORT ENTRY** at a price that is *still ahead of the
+  market*, so you can actually get filled. In an uptrend it sits **below** price
+  (buy the pullback to support); in a downtrend it sits **above** price (sell the
+  bounce into resistance). The label says LONG or SHORT, which tells you the
+  direction it expects the stock to move.
+- **Red dashed line — STOP LOSS**, placed beyond the last swing plus an ATR buffer.
+- **Green dashed line — TAKE PROFIT**, at your chosen R multiple (default 2× the risk).
+
+Each line carries a label with the exact price, and all three project forward to
+the right so you can see the expected move.
+
+The levels **recalculate on every new bar**, so what you see is always the latest,
+most relevant setup for the timeframe on screen. Switch the chart from daily to
+weekly to monthly and the levels re-derive from that timeframe.
+
+**Settings worth touching:** `Take Profit (R multiple)` for a wider/tighter target,
+`Stop Buffer (ATR)` for a looser stop, `Structure Lookback` for how major the swings
+must be (higher = bigger structure), `Project Forward (bars)` for line length.
+
+There is also an optional alert ("Price reached entry") — it draws nothing on the
+chart; create it via the ⏰ icon if you want to be told when price arrives.
+
+---
+
+# 2. Full version  (`chart-analyzer-bot.pine`)
 
 A TradingView indicator that reads trend/momentum across three timeframes, filters
 for trend strength and volume, scores confluence, and draws a full entry / stop /
