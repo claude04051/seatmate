@@ -12,6 +12,32 @@
 Reads whatever timeframe the chart is showing — daily, weekly, monthly, intraday —
 works out the trend from that same timeframe, and projects **one current setup**.
 
+**What the analysis actually does** (all of it happens under the hood — none of it
+is drawn):
+
+1. **Regime detection.** ADX measures whether the market is genuinely trending or
+   just chopping. Trending and choppy markets get completely different setups.
+2. **Higher-timeframe context.** The script derives a higher timeframe from the one
+   you're on automatically (daily → weekly, weekly → monthly, monthly → yearly,
+   intraday → 4H/daily) and checks whether it agrees with the chart's trend.
+3. **Mode selection.** If the move has strength *and* the higher timeframe agrees,
+   it plays the trend — buying pullbacks / selling bounces. If strength is missing
+   or the higher timeframe disagrees, it treats the move as a range or
+   counter-trend bounce and fades the extremes instead.
+4. **Structure mapping.** It tracks the last confirmed swing high and swing low and
+   measures the live impulse leg between them.
+5. **Confluence entry.** It builds a list of candidate levels — the 38.2%, 50% and
+   61.8% Fibonacci retracements of that leg, the fast EMA, and the swing anchoring
+   the leg — keeps only those price still has to travel to reach, then picks the
+   level with the most agreement clustered around it (ties go to the one nearest
+   price). In range mode it uses the range edges instead.
+6. **Stop placement.** Beyond the structure that would invalidate the idea, plus an
+   ATR buffer, and never closer than a minimum ATR distance so normal noise can't
+   stop you out.
+7. **Target projection.** A Fibonacci extension of the measured leg (or the opposite
+   range edge), floored at your minimum reward:risk so a setup is never shown with
+   a worse payoff than you accept.
+
 **What it draws — and this is all it draws:**
 
 - **Blue line — LONG ENTRY / SHORT ENTRY** at a price that is *still ahead of the
@@ -29,9 +55,12 @@ The levels **recalculate on every new bar**, so what you see is always the lates
 most relevant setup for the timeframe on screen. Switch the chart from daily to
 weekly to monthly and the levels re-derive from that timeframe.
 
-**Settings worth touching:** `Take Profit (R multiple)` for a wider/tighter target,
-`Stop Buffer (ATR)` for a looser stop, `Structure Lookback` for how major the swings
-must be (higher = bigger structure), `Project Forward (bars)` for line length.
+**Settings worth touching:** `Minimum Reward:Risk` (never show a setup paying less
+than this), `Target Extension (Fib)` for how far the projection runs, `Stop Buffer
+(ATR)` and `Minimum Stop Distance (ATR)` for how much room the stop gets,
+`Structure Lookback` for how major the swings must be (higher = bigger structure),
+`Treat as trending above ADX` for how strict the trend/range split is, and
+`Use higher-timeframe context` to turn the confirmation layer off.
 
 There is also an optional alert ("Price reached entry") — it draws nothing on the
 chart; create it via the ⏰ icon if you want to be told when price arrives.
