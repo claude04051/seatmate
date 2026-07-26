@@ -24,19 +24,30 @@ is drawn):
    it plays the trend — buying pullbacks / selling bounces. If strength is missing
    or the higher timeframe disagrees, it treats the move as a range or
    counter-trend bounce and fades the extremes instead.
-4. **Structure mapping.** It tracks the last confirmed swing high and swing low and
-   measures the live impulse leg between them.
-5. **Confluence entry.** It builds a list of candidate levels — the 38.2%, 50% and
-   61.8% Fibonacci retracements of that leg, the fast EMA, and the swing anchoring
-   the leg — keeps only those price still has to travel to reach, then picks the
-   level with the most agreement clustered around it (ties go to the one nearest
-   price). In range mode it uses the range edges instead.
+4. **Structure mapping.** It remembers the last several confirmed swing highs and
+   lows (not just one) and measures the live impulse leg between the most recent
+   pair.
+5. **Confluence entry.** It builds a candidate list from the 38.2% / 50% / 61.8%
+   Fibonacci retracements of the leg, the fast EMA, **every remembered swing**,
+   swings on the opposite side (broken resistance becomes support and vice versa),
+   and **round numbers**. In range mode it uses the range edges instead. It then:
+   - discards levels on the wrong side of price,
+   - **discards levels too far away to realistically fill** (`Max Entry Distance
+     (ATR)`), so you never get shown a price that would take months to reach,
+   - picks whichever surviving level has the most agreement clustered around it,
+     ties going to the one nearest price.
+
+   If nothing is within reach it falls back to the nearest real structure, and
+   only then to a modest pullback from price.
 6. **Stop placement.** Beyond the structure that would invalidate the idea, plus an
    ATR buffer, and never closer than a minimum ATR distance so normal noise can't
    stop you out.
 7. **Target projection.** A Fibonacci extension of the measured leg (or the opposite
    range edge), floored at your minimum reward:risk so a setup is never shown with
    a worse payoff than you accept.
+8. **Direction stability.** A flip from long to short (or back) has to persist for
+   several bars before the levels redraw the other way, so the setup doesn't swap
+   sides on every marginal bar.
 
 **What it draws — and this is all it draws:**
 
@@ -70,7 +81,10 @@ history, a small box tells you where the analysis stands:
 - `⏳ ANALYZING AAPL · Weekly — loading history (32/50 bars)` — still working, the
   levels aren't final yet.
 - `✔ ANALYSIS COMPLETE — AAPL · Weekly · 1240 bars read — safe to switch timeframe`
-  — the timeframe has been fully read and the three levels are final.
+  `LONG setup (trend) · entry 2.31% away (1.4 ATR) · R:R 2.45`
+  — the timeframe has been fully read and the three levels are final. The second
+  line tells you how far price has to travel to reach the entry and what the
+  setup actually pays, so you can judge it without measuring anything yourself.
 
 Wait for the green ✔ before switching, and you'll know every timeframe was read
 completely. Turn it off with the `Show analysis status` setting.

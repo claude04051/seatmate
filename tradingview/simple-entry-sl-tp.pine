@@ -6,24 +6,34 @@
 // loss, and a take profit. Only those three levels are drawn.
 indicator("Simple Entry / SL / TP", overlay=true, max_lines_count=20, max_labels_count=20)
 
+gA = "Analysis"
+gT = "Trade"
+gD = "Display"
+
 // ============================================================================
 // INPUTS
 // ============================================================================
-fastLen   = input.int(20,  "Trend EMA (fast)")
-slowLen   = input.int(50,  "Trend EMA (slow)")
-pivotLen  = input.int(10,  "Structure Lookback (swing size)")
-rangeLen  = input.int(40,  "Range Lookback")
-atrLen    = input.int(14,  "ATR Length")
-adxLen    = input.int(14,  "Trend Strength (ADX) Length")
-adxMin    = input.float(20.0, "Treat as trending above ADX", step=1.0)
-slBuffer  = input.float(1.0, "Stop Buffer (ATR)", step=0.1)
-minStopA  = input.float(1.0, "Minimum Stop Distance (ATR)", step=0.1)
-minRR     = input.float(2.0, "Minimum Reward:Risk", step=0.1)
-extRatio  = input.float(1.272, "Target Extension (Fib)", step=0.1)
-tpMode    = input.string("Structure + min R", "Take Profit", options=["Structure + min R", "Fixed R multiple"])
-useHTF    = input.bool(true, "Use higher-timeframe context")
-projBars  = input.int(30,  "Project Forward (bars)")
-showStatus = input.bool(true, "Show analysis status")
+fastLen   = input.int(20,  "Trend EMA (fast)", group=gA)
+slowLen   = input.int(50,  "Trend EMA (slow)", group=gA)
+pivotLen  = input.int(10,  "Structure Lookback (swing size)", group=gA)
+maxSwings = input.int(6,   "Swings Remembered", minval=1, group=gA)
+rangeLen  = input.int(40,  "Range Lookback", group=gA)
+atrLen    = input.int(14,  "ATR Length", group=gA)
+adxLen    = input.int(14,  "Trend Strength (ADX) Length", group=gA)
+adxMin    = input.float(20.0, "Treat as trending above ADX", step=1.0, group=gA)
+useHTF    = input.bool(true, "Use higher-timeframe context", group=gA)
+useRound  = input.bool(true, "Include round-number levels", group=gA)
+holdBars  = input.int(3, "Direction Stability (bars)", minval=1, group=gA)
+
+maxDistA  = input.float(4.0, "Max Entry Distance (ATR)", step=0.5, group=gT)
+slBuffer  = input.float(1.0, "Stop Buffer (ATR)", step=0.1, group=gT)
+minStopA  = input.float(1.0, "Minimum Stop Distance (ATR)", step=0.1, group=gT)
+minRR     = input.float(2.0, "Minimum Reward:Risk", step=0.1, group=gT)
+extRatio  = input.float(1.272, "Target Extension (Fib)", step=0.1, group=gT)
+tpMode    = input.string("Structure + min R", "Take Profit", options=["Structure + min R", "Fixed R multiple"], group=gT)
+
+projBars   = input.int(30, "Project Forward (bars)", group=gD)
+showStatus = input.bool(true, "Show analysis status", group=gD)
 
 // ============================================================================
 // CORE MEASURES
@@ -43,9 +53,9 @@ trending = adxVal >= adxMin
 // HIGHER-TIMEFRAME CONTEXT (derived automatically from the chart timeframe)
 //   intraday -> 4H/Daily, daily -> weekly, weekly -> monthly, monthly -> yearly
 // ============================================================================
-autoHTF = timeframe.isseconds ? "60" : timeframe.isintraday ? (timeframe.multiplier <= 15 ? "240" : "D") : timeframe.isdaily ? "W" : timeframe.isweekly ? "M" : "12M"
-htfDiff  = request.security(syminfo.tickerid, autoHTF, ta.ema(close, fastLen) - ta.ema(close, slowLen), lookahead=barmerge.lookahead_off)
-htfBias  = not useHTF or na(htfDiff) ? 0 : (htfDiff > 0 ? 1 : -1)
+autoHTF   = timeframe.isseconds ? "60" : timeframe.isintraday ? (timeframe.multiplier <= 15 ? "240" : "D") : timeframe.isdaily ? "W" : timeframe.isweekly ? "M" : "12M"
+htfDiff   = request.security(syminfo.tickerid, autoHTF, ta.ema(close, fastLen) - ta.ema(close, slowLen), lookahead=barmerge.lookahead_off)
+htfBias   = not useHTF or na(htfDiff) ? 0 : (htfDiff > 0 ? 1 : -1)
 htfAgrees = htfBias == 0 or htfBias == biasTrend
 
 // Trend-following only when the move has strength AND the higher timeframe agrees.
@@ -53,16 +63,26 @@ htfAgrees = htfBias == 0 or htfBias == biasTrend
 trendMode = trending and htfAgrees
 
 // ============================================================================
-// MARKET STRUCTURE — last confirmed swings and the leg between them
+// MARKET STRUCTURE — the last several confirmed swings, not just one
 // ============================================================================
 phv = ta.pivothigh(high, pivotLen, pivotLen)
 plv = ta.pivotlow(low,  pivotLen, pivotLen)
+
 var float swHi = na
 var float swLo = na
+var pHighs = array.new_float()
+var pLows  = array.new_float()
+
 if not na(phv)
     swHi := phv
+    array.push(pHighs, phv)
+    if array.size(pHighs) > maxSwings
+        array.shift(pHighs)
 if not na(plv)
     swLo := plv
+    array.push(pLows, plv)
+    if array.size(pLows) > maxSwings
+        array.shift(pLows)
 
 haveLeg  = not na(swHi) and not na(swLo)
 legRange = haveLeg ? math.abs(swHi - swLo) : na
@@ -74,14 +94,36 @@ rangePos = (close - rngLo) / rngSize          // 0 = at range low, 1 = at range 
 
 // In a range, fade the extremes: upper half -> look to sell, lower half -> look to buy
 biasRange = rangePos > 0.5 ? -1 : 1
-bias      = trendMode ? biasTrend : biasRange
+rawBias   = trendMode ? biasTrend : biasRange
+
+// ----------------------------------------------------------------------------
+// DIRECTION STABILITY — a flip must persist before the levels are redrawn the
+// other way, so the setup doesn't swap sides on every marginal bar.
+// ----------------------------------------------------------------------------
+var int heldBias    = 0
+var int pendingBias = 0
+var int pendingCnt  = 0
+
+if heldBias == 0
+    heldBias := rawBias
+else if rawBias == heldBias
+    pendingBias := 0
+    pendingCnt  := 0
+else
+    pendingCnt  := rawBias == pendingBias ? pendingCnt + 1 : 1
+    pendingBias := rawBias
+    if pendingCnt >= holdBars
+        heldBias   := rawBias
+        pendingCnt := 0
+
+bias = heldBias
 
 // ============================================================================
 // ENTRY — confluence of levels price still has to travel to reach
-//   Longs  take the best support BELOW price, shorts the best resistance ABOVE.
-//   Candidates: Fibonacci retracements of the live leg, the fast EMA and the
-//   swing that anchors the leg. Whichever level has the most agreement around
-//   it wins; ties go to the level nearest current price.
+//   Candidates: Fibonacci retracements of the live leg, the fast EMA, every
+//   remembered swing on the correct side, and round numbers. Levels too far
+//   away to realistically fill are discarded. Whichever surviving level has the
+//   most agreement clustered around it wins; ties go to the nearest to price.
 // ============================================================================
 pickLevel(arr, isLong, tol) =>
     float best = na
@@ -99,12 +141,23 @@ pickLevel(arr, isLong, tol) =>
                 best := lv
     best
 
+// Nearest level on the tradable side, used as a fallback
+nearestSide(arr, isLong, ref) =>
+    float best = na
+    if array.size(arr) > 0
+        for i = 0 to array.size(arr) - 1
+            lv = array.get(arr, i)
+            ok = isLong ? lv < ref : lv > ref
+            if ok and (na(best) or (isLong ? lv > best : lv < best))
+                best := lv
+    best
+
 float entry  = na
 float stopL  = na
 float target = na
 
-if not na(atrVal)
-    tol = atrVal * 0.5
+if not na(atrVal) and atrVal > 0
+    tol    = atrVal * 0.5
     levels = array.new_float()
 
     if trendMode and haveLeg
@@ -113,12 +166,10 @@ if not na(atrVal)
             array.push(levels, swHi - legRange * 0.382)
             array.push(levels, swHi - legRange * 0.5)
             array.push(levels, swHi - legRange * 0.618)
-            array.push(levels, swLo)
         else
             array.push(levels, swLo + legRange * 0.382)
             array.push(levels, swLo + legRange * 0.5)
             array.push(levels, swLo + legRange * 0.618)
-            array.push(levels, swHi)
         array.push(levels, emaF)
     else
         // Range: buy the lower edge, sell the upper edge
@@ -129,29 +180,59 @@ if not na(atrVal)
             array.push(levels, rngHi - rngSize * 0.15)
             array.push(levels, rngHi)
 
-    // Keep only levels on the tradable side of price
-    valid = array.new_float()
+    // Every remembered swing is a potential support (long) or resistance (short)
+    src = bias == 1 ? pLows : pHighs
+    if array.size(src) > 0
+        for i = 0 to array.size(src) - 1
+            array.push(levels, array.get(src, i))
+    // Swings on the other side matter too once broken (support/resistance flip)
+    flip = bias == 1 ? pHighs : pLows
+    if array.size(flip) > 0
+        for i = 0 to array.size(flip) - 1
+            array.push(levels, array.get(flip, i))
+
+    // Round numbers act as their own support/resistance
+    if useRound
+        roundStep = math.pow(10, math.floor(math.log10(math.max(close, syminfo.mintick))) - 1)
+        if roundStep > 0
+            base = bias == 1 ? math.floor(close / roundStep) * roundStep : math.ceil(close / roundStep) * roundStep
+            array.push(levels, base)
+            array.push(levels, bias == 1 ? base - roundStep : base + roundStep)
+
+    // Keep levels on the tradable side AND close enough to realistically fill
+    reach = array.new_float()
+    side  = array.new_float()
     if array.size(levels) > 0
         for i = 0 to array.size(levels) - 1
             lv = array.get(levels, i)
             if not na(lv) and (bias == 1 ? lv < close : lv > close)
-                array.push(valid, lv)
+                array.push(side, lv)
+                if math.abs(close - lv) <= atrVal * maxDistA
+                    array.push(reach, lv)
 
-    entry := array.size(valid) > 0 ? pickLevel(valid, bias == 1, tol) : (bias == 1 ? close - 0.5 * atrVal : close + 0.5 * atrVal)
+    // Best confluence within reach -> else nearest structure -> else a modest pullback
+    confluent = pickLevel(reach, bias == 1, tol)
+    nearest   = nearestSide(side, bias == 1, close)
+    if not na(confluent)
+        entry := confluent
+    else if not na(nearest)
+        entry := nearest
+    else
+        entry := bias == 1 ? close - 0.5 * atrVal : close + 0.5 * atrVal
 
     // ------------------------------------------------------------------
     // STOP — beyond the structure that invalidates the idea, never inside
     // normal noise (enforced minimum ATR distance)
     // ------------------------------------------------------------------
-    anchor = trendMode and haveLeg ? (bias == 1 ? math.min(swLo, entry) : math.max(swHi, entry)) : (bias == 1 ? math.min(rngLo, entry) : math.max(rngHi, entry))
-    stopRaw = bias == 1 ? anchor - atrVal * slBuffer : anchor + atrVal * slBuffer
+    anchor   = trendMode and haveLeg ? (bias == 1 ? math.min(swLo, entry) : math.max(swHi, entry)) : (bias == 1 ? math.min(rngLo, entry) : math.max(rngHi, entry))
+    stopRaw  = bias == 1 ? anchor - atrVal * slBuffer : anchor + atrVal * slBuffer
     stopDist = math.max(math.abs(entry - stopRaw), atrVal * minStopA)
-    stopL := bias == 1 ? entry - stopDist : entry + stopDist
+    stopL   := bias == 1 ? entry - stopDist : entry + stopDist
 
     // ------------------------------------------------------------------
     // TARGET — structural projection, floored at your minimum reward:risk
     // ------------------------------------------------------------------
-    risk = math.max(math.abs(entry - stopL), syminfo.mintick)
+    risk    = math.max(math.abs(entry - stopL), syminfo.mintick)
     rTarget = bias == 1 ? entry + risk * minRR : entry - risk * minRR
     float sTarget = na
     if trendMode and haveLeg
@@ -203,11 +284,17 @@ htfOk    = not useHTF or not na(htfDiff)
 levelsOk = not na(entry) and not na(stopL) and not na(target)
 ready    = barsOk and htfOk and levelsOk
 
-statusTxt = ready ? "✔ ANALYSIS COMPLETE — " + syminfo.ticker + " · " + tfName + " · " + str.tostring(bar_index + 1) + " bars read — safe to switch timeframe" : "⏳ ANALYZING " + syminfo.ticker + " · " + tfName + " — " + (not barsOk ? "loading history (" + str.tostring(bar_index + 1) + "/" + str.tostring(needBars) + " bars)" : not htfOk ? "waiting for higher-timeframe data" : "no valid level yet")
+distPct  = levelsOk ? math.abs(close - entry) / close * 100 : na
+distATR  = levelsOk and atrVal > 0 ? math.abs(close - entry) / atrVal : na
+rrNow    = levelsOk ? math.abs(target - entry) / math.max(math.abs(entry - stopL), syminfo.mintick) : na
+modeTxt  = trendMode ? "trend" : "range"
+
+readyTxt = "✔ ANALYSIS COMPLETE — " + syminfo.ticker + " · " + tfName + " · " + str.tostring(bar_index + 1) + " bars read — safe to switch timeframe" + "\n" + (bias == 1 ? "LONG" : "SHORT") + " setup (" + modeTxt + ") · entry " + str.tostring(distPct, "#.##") + "% away (" + str.tostring(distATR, "#.#") + " ATR) · R:R " + str.tostring(rrNow, "#.##")
+waitTxt  = "⏳ ANALYZING " + syminfo.ticker + " · " + tfName + " — " + (not barsOk ? "loading history (" + str.tostring(bar_index + 1) + "/" + str.tostring(needBars) + " bars)" : not htfOk ? "waiting for higher-timeframe data" : "no valid level yet")
 
 var table stTable = table.new(position.bottom_left, 1, 1, border_width=1)
 if showStatus and barstate.islast
-    table.cell(stTable, 0, 0, statusTxt, text_color=color.white, bgcolor=ready ? color.new(color.green, 15) : color.new(color.orange, 15), text_size=size.small)
+    table.cell(stTable, 0, 0, ready ? readyTxt : waitTxt, text_color=color.white, bgcolor=ready ? color.new(color.green, 15) : color.new(color.orange, 15), text_size=size.small, text_halign=text.align_left)
 
 // ============================================================================
 // ALERT (optional — nothing is drawn for this)
