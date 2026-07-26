@@ -23,6 +23,7 @@ extRatio  = input.float(1.272, "Target Extension (Fib)", step=0.1)
 tpMode    = input.string("Structure + min R", "Take Profit", options=["Structure + min R", "Fixed R multiple"])
 useHTF    = input.bool(true, "Use higher-timeframe context")
 projBars  = input.int(30,  "Project Forward (bars)")
+showStatus = input.bool(true, "Show analysis status")
 
 // ============================================================================
 // CORE MEASURES
@@ -58,14 +59,10 @@ phv = ta.pivothigh(high, pivotLen, pivotLen)
 plv = ta.pivotlow(low,  pivotLen, pivotLen)
 var float swHi = na
 var float swLo = na
-var int   swHiBar = na
-var int   swLoBar = na
 if not na(phv)
     swHi := phv
-    swHiBar := bar_index - pivotLen
 if not na(plv)
     swLo := plv
-    swLoBar := bar_index - pivotLen
 
 haveLeg  = not na(swHi) and not na(swLo)
 legRange = haveLeg ? math.abs(swHi - swLo) : na
@@ -193,6 +190,24 @@ if barstate.islast and not na(entry) and not na(stopL) and not na(target)
     eLab := label.new(bar_index, entry,  (bias == 1 ? "LONG ENTRY " : "SHORT ENTRY ") + str.tostring(entry,  format.mintick), style=label.style_label_left, color=color.new(color.blue,  0), textcolor=color.white, size=size.normal)
     sLab := label.new(bar_index, stopL,  "STOP LOSS "   + str.tostring(stopL,  format.mintick), style=label.style_label_left, color=color.new(color.red,   0), textcolor=color.white, size=size.normal)
     tLab := label.new(bar_index, target, "TAKE PROFIT " + str.tostring(target, format.mintick), style=label.style_label_left, color=color.new(color.green, 0), textcolor=color.white, size=size.normal)
+
+// ============================================================================
+// ANALYSIS STATUS — confirms the current timeframe has been fully read, so you
+// know the levels above are final before switching to another timeframe.
+// ============================================================================
+tfName = timeframe.isseconds ? str.tostring(timeframe.multiplier) + "s" : timeframe.isintraday ? (timeframe.multiplier >= 60 and timeframe.multiplier % 60 == 0 ? str.tostring(math.round(timeframe.multiplier / 60)) + "H" : str.tostring(timeframe.multiplier) + "m") : timeframe.isdaily ? "Daily" : timeframe.isweekly ? "Weekly" : timeframe.ismonthly ? (timeframe.multiplier >= 12 ? "Yearly" : timeframe.multiplier > 1 ? str.tostring(timeframe.multiplier) + "-Month" : "Monthly") : timeframe.period
+
+needBars = math.max(math.max(slowLen, rangeLen), pivotLen * 2 + 1)
+barsOk   = bar_index >= needBars
+htfOk    = not useHTF or not na(htfDiff)
+levelsOk = not na(entry) and not na(stopL) and not na(target)
+ready    = barsOk and htfOk and levelsOk
+
+statusTxt = ready ? "✔ ANALYSIS COMPLETE — " + syminfo.ticker + " · " + tfName + " · " + str.tostring(bar_index + 1) + " bars read — safe to switch timeframe" : "⏳ ANALYZING " + syminfo.ticker + " · " + tfName + " — " + (not barsOk ? "loading history (" + str.tostring(bar_index + 1) + "/" + str.tostring(needBars) + " bars)" : not htfOk ? "waiting for higher-timeframe data" : "no valid level yet")
+
+var table stTable = table.new(position.bottom_left, 1, 1, border_width=1)
+if showStatus and barstate.islast
+    table.cell(stTable, 0, 0, statusTxt, text_color=color.white, bgcolor=ready ? color.new(color.green, 15) : color.new(color.orange, 15), text_size=size.small)
 
 // ============================================================================
 // ALERT (optional — nothing is drawn for this)

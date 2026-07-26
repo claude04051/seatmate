@@ -52,8 +52,28 @@ Each line carries a label with the exact price, and all three project forward to
 the right so you can see the expected move.
 
 The levels **recalculate on every new bar**, so what you see is always the latest,
-most relevant setup for the timeframe on screen. Switch the chart from daily to
-weekly to monthly and the levels re-derive from that timeframe.
+most relevant setup for the timeframe on screen.
+
+### Switching timeframes
+
+Every reading comes from the chart's own candles, so changing the timeframe —
+daily → weekly → monthly → yearly, or down to intraday — re-runs the whole
+analysis on that timeframe's bars. The trend, swings, ranges, entry, stop and
+target all re-derive, and the higher-timeframe confirmation layer re-points
+automatically (daily confirms against weekly, weekly against monthly, and so on).
+It reads whatever symbol the chart is on, too — switch tickers and it re-analyses
+that one.
+
+**Status readout (bottom-left):** because bigger timeframes take a moment to load
+history, a small box tells you where the analysis stands:
+
+- `⏳ ANALYZING AAPL · Weekly — loading history (32/50 bars)` — still working, the
+  levels aren't final yet.
+- `✔ ANALYSIS COMPLETE — AAPL · Weekly · 1240 bars read — safe to switch timeframe`
+  — the timeframe has been fully read and the three levels are final.
+
+Wait for the green ✔ before switching, and you'll know every timeframe was read
+completely. Turn it off with the `Show analysis status` setting.
 
 **Settings worth touching:** `Minimum Reward:Risk` (never show a setup paying less
 than this), `Target Extension (Fib)` for how far the projection runs, `Stop Buffer
