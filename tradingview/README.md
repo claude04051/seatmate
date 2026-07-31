@@ -15,15 +15,50 @@ works out the trend from that same timeframe, and projects **one current setup**
 **What the analysis actually does** (all of it happens under the hood — none of it
 is drawn):
 
-1. **Regime detection.** ADX measures whether the market is genuinely trending or
-   just chopping. Trending and choppy markets get completely different setups.
-2. **Higher-timeframe context.** The script derives a higher timeframe from the one
-   you're on automatically (daily → weekly, weekly → monthly, monthly → yearly,
-   intraday → 4H/daily) and checks whether it agrees with the chart's trend.
-3. **Mode selection.** If the move has strength *and* the higher timeframe agrees,
-   it plays the trend — buying pullbacks / selling bounces. If strength is missing
-   or the higher timeframe disagrees, it treats the move as a range or
-   counter-trend bounce and fades the extremes instead.
+### Trend detection — scored 0–100 from four independent angles
+
+No single lagging indicator gets to declare a trend on its own. Each angle
+contributes points, and the trend is only *followed* once the score clears
+`Trend Score needed to follow trend` (default 60) and beats the opposing score:
+
+| Angle | Weight | What earns the points |
+|---|---|---|
+| **Market structure** | 30 | Higher highs **and** higher lows — the actual definition of an uptrend (15 for one of the two) |
+| **Volume** | 25 | OBV above its average **and** more volume on up bars than down bars (12 for one of the two) |
+| **MA alignment** | 20 | Price above both EMAs and fast above slow |
+| **Directional strength** | 15 | ADX above threshold with DI+ leading |
+| **Higher timeframe** | 10 | The auto-derived higher timeframe agrees |
+
+**Volume can veto a trend outright.** If OBV and up/down volume both point the
+other way, the trend is rejected no matter how good the price action looks —
+that's the classic "rally on falling volume" trap. Symbols with no volume feed
+score neutral instead of being penalised.
+
+### Chart patterns — each with its own trade plan
+
+When a pattern is found it *overrides* the generic pullback logic, because a
+pattern implies a specific entry, invalidation and objective:
+
+| Pattern | Entry | Stop | Target |
+|---|---|---|---|
+| **Bull flag** (strong pole, tight drift, drying volume) | Flag support | Below flag low | Measured move of the pole |
+| **Bear flag** | Flag resistance | Above flag high | Measured move of the pole |
+| **Double bottom** | Neckline retest | Below the double low | Pattern height projected up |
+| **Double top** | Neckline retest | Above the double top | Pattern height projected down |
+| **Ascending triangle** (flat highs, rising lows) | Rising support | Below the last low | Breakout measured move |
+| **Volume breakout/breakdown** (structure break on ≥1.5× volume) | Retest of the broken level | Beyond it | 75% of the impulse |
+
+If no pattern qualifies — or its entry is already out of reach — it falls back to
+the confluence method below.
+
+### The rest of the pipeline
+
+1. **Regime.** ADX separates genuinely trending markets from chop; each gets a
+   different playbook.
+2. **Higher-timeframe context.** Derived automatically from the timeframe you're on
+   (daily → weekly, weekly → monthly, monthly → yearly, intraday → 4H/daily).
+3. **Mode selection.** Confirmed trend → buy pullbacks / sell bounces. No trend →
+   fade the range extremes instead.
 4. **Structure mapping.** It remembers the last several confirmed swing highs and
    lows (not just one) and measures the live impulse leg between the most recent
    pair.
@@ -80,11 +115,20 @@ history, a small box tells you where the analysis stands:
 
 - `⏳ ANALYZING AAPL · Weekly — loading history (32/50 bars)` — still working, the
   levels aren't final yet.
-- `✔ ANALYSIS COMPLETE — AAPL · Weekly · 1240 bars read — safe to switch timeframe`
-  `LONG setup (trend) · entry 2.31% away (1.4 ATR) · R:R 2.45`
-  — the timeframe has been fully read and the three levels are final. The second
-  line tells you how far price has to travel to reach the entry and what the
-  setup actually pays, so you can judge it without measuring anything yourself.
+- When it's finished, the box turns green (uptrend), red (downtrend) or grey (no
+  clear trend) and reports the whole verdict:
+
+  ```
+  ✔ AAPL · Weekly · 1240 bars read — safe to switch timeframe
+  UPTREND  (up 85/100 · down 15/100) · volume confirms buying
+  Pattern: bull flag
+  Plan: bull flag: buy flag support, target measured move
+  LONG · entry 2.31% away (1.4 ATR) · R:R 2.45
+  ```
+
+  So you get the verdict, the score behind it, what volume is saying, the pattern
+  found, the strategy being applied, and how far price must travel to reach the
+  entry — without measuring anything yourself.
 
 Wait for the green ✔ before switching, and you'll know every timeframe was read
 completely. Turn it off with the `Show analysis status` setting.
