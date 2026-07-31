@@ -222,7 +222,9 @@ patternName = breakoutUp ? "volume breakout" : breakoutDown ? "volume breakdown"
 // ============================================================================
 // LEVEL SELECTION HELPERS
 // ============================================================================
-pickLevel(arr, isLong, tol) =>
+// Ties go to the level nearest price. Which direction that is depends on the side
+// the entry must sit on, not on trade direction — breakout mode inverts it.
+pickLevel(arr, preferHigh, tol) =>
     float best = na
     int bestScore = -1
     if array.size(arr) > 0
@@ -232,7 +234,7 @@ pickLevel(arr, isLong, tol) =>
             for j = 0 to array.size(arr) - 1
                 if math.abs(array.get(arr, j) - lv) <= tol
                     sc += 1
-            better = sc > bestScore or (sc == bestScore and (isLong ? lv > best : lv < best))
+            better = sc > bestScore or (sc == bestScore and (preferHigh ? lv > best : lv < best))
             if better
                 bestScore := sc
                 best := lv
@@ -307,6 +309,11 @@ if not na(aAtr) and aAtr > 0
         pStop   := math.max(hi0, hi1) + aAtr * slBuffer
         pTgt    := neck2 - (math.max(hi0, hi1) - neck2)
         planTxt := "double top: sell neckline retest, target pattern height"
+    else if bias == -1 and descTriangle
+        pEntry  := math.min(hi0, aClose + aAtr)
+        pStop   := hi0 + aAtr * slBuffer
+        pTgt    := lo0 - (hi0 - lo0)
+        planTxt := "descending triangle: sell falling resistance, target breakdown move"
     else if bias == -1 and breakoutDown
         pEntry  := lo0
         pStop   := lo0 + math.max(aAtr * slBuffer, flagRange * 0.5)
@@ -366,33 +373,36 @@ if not na(aAtr) and aAtr > 0
 
         // Which side of price the entry has to sit on, per the chosen style
         eitherSide = entryMode == "Either"
-        wantBelow  = entryMode == "Breakout (above price for longs)" ? bias == -1 : bias == 1
+        breakMode  = entryMode == "Breakout (above price for longs)"
+        wantBelow  = breakMode ? bias == -1 : bias == 1
         if eitherSide
             planTxt := "nearest untouched level, either side"
-        else if entryMode == "Breakout (above price for longs)"
+        else if breakMode
             planTxt := trendMode ? "trend breakout through untouched level" : "range: break the edge"
 
+        // The distance cap binds the fallback too — a level past it is not tradeable,
+        // so only levels that clear both freshness and the cap are collected.
         reach = array.new_float()
-        side  = array.new_float()
         if array.size(levels) > 0
             for i = 0 to array.size(levels) - 1
                 lv = array.get(levels, i)
-                if freshOk(lv, aClose, wantBelow, eitherSide)
-                    array.push(side, lv)
-                    if math.abs(aClose - lv) <= aAtr * maxDistA
-                        array.push(reach, lv)
+                if freshOk(lv, aClose, wantBelow, eitherSide) and math.abs(aClose - lv) <= aAtr * maxDistA
+                    array.push(reach, lv)
 
-        confluent = pickLevel(reach, bias == 1, tol)
-        nearest   = nearestFresh(side, aClose, wantBelow, eitherSide)
+        confluent = pickLevel(reach, wantBelow, tol)
+        nearest   = nearestFresh(reach, aClose, wantBelow, eitherSide)
         entry := not na(confluent) ? confluent : nearest
 
-        // Nothing untouched left to trade — no plan rather than a stale one
+        // Nothing untouched within reach — no plan rather than a bad one
         if na(entry)
             noFresh := true
-            planTxt := "no fresh entry — price has already traded through every level"
+            planTxt := "no entry — no untouched level within max distance"
         else
-            anchor  = trendMode and haveLeg ? (bias == 1 ? math.min(swLo, entry) : math.max(swHi, entry)) : (bias == 1 ? math.min(aRngLo, entry) : math.max(aRngHi, entry))
-            stopL  := bias == 1 ? anchor - aAtr * slBuffer : anchor + aAtr * slBuffer
+            // A breakout entry sits beyond price, so the full leg extreme would size
+            // risk off the whole move — anchor to the recent range edge instead.
+            useBrk = breakMode and (bias == 1 ? not na(aRecentLo) : not na(aRecentHi))
+            anchor = useBrk ? (bias == 1 ? math.min(aRecentLo, entry) : math.max(aRecentHi, entry)) : trendMode and haveLeg ? (bias == 1 ? math.min(swLo, entry) : math.max(swHi, entry)) : (bias == 1 ? math.min(aRngLo, entry) : math.max(aRngHi, entry))
+            stopL := bias == 1 ? anchor - aAtr * slBuffer : anchor + aAtr * slBuffer
 
     if not na(entry) and not na(stopL)
         stopDist = math.max(math.abs(entry - stopL), aAtr * minStopA)
@@ -522,7 +532,7 @@ readyTxt = "✔ PLAN LOCKED on " + planTFtxt + " · " + syminfo.ticker + " · " 
 
 waitTxt = "⏳ COLLECTING HISTORY — " + syminfo.ticker + " · plan timeframe " + planTFtxt + "\n" + (not historyOk ? "need " + str.tostring(barsNeed) + " " + planTFtxt + " bars, have " + str.tostring(planBarsHave) + " — scroll left to load more history" : "waiting for " + planTFtxt + " indicators to fill")
 
-staleTxt = "⛔ NO FRESH ENTRY — all levels already traded through\n" + syminfo.ticker + " · plan timeframe " + planTFtxt + "\n" + verdict + "  (up " + str.tostring(scoreUp) + "/100 · down " + str.tostring(scoreDn) + "/100) · " + volTxt + "\nPattern: " + patternName + "\nEntry style: " + styleTxt + " · " + freshTxt + "\nNo trade: every level worth buying or selling has already been reached, so there is nothing left ahead of price"
+staleTxt = "⛔ NO ENTRY — nothing untouched within max distance\n" + syminfo.ticker + " · plan timeframe " + planTFtxt + "\n" + verdict + "  (up " + str.tostring(scoreUp) + "/100 · down " + str.tostring(scoreDn) + "/100) · " + volTxt + "\nPattern: " + patternName + "\nEntry style: " + styleTxt + " · " + freshTxt + "\nNo trade: every level ahead of price has either already been reached or sits beyond the max entry distance"
 
 var table stTable = table.new(position.bottom_left, 1, 1, border_width=1)
 if showStatus and barstate.islast
