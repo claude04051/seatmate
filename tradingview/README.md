@@ -9,8 +9,106 @@
 
 # 1. Simple Entry / SL / TP  (`simple-entry-sl-tp.pine`)
 
-Reads whatever timeframe the chart is showing — daily, weekly, monthly, intraday —
-works out the trend from that same timeframe, and projects **one current setup**.
+Builds **one locked trade plan** on a fixed timeframe and projects it as three
+levels: entry, stop loss, take profit.
+
+## How to actually use it
+
+### Step 1 — match the Plan Timeframe to your horizon
+
+| You hold trades for | Set Plan Timeframe to | View the chart at |
+|---|---|---|
+| Days to a few weeks | **Daily** (default) | Daily or 4H |
+| Weeks to months | **Weekly** | Weekly or Daily |
+| Months or longer | **Monthly** | Monthly or Weekly |
+
+Never view a chart *above* the plan timeframe — the status box warns you if you do.
+
+### Step 2 — read the status box, bottom left
+
+```
+✔ PLAN LOCKED on Daily · AAPL · 3650 days of history read
+Holding this plan — it will not move until price hits it or the trend flips
+UPTREND  (up 85/100 · down 15/100) · volume confirms buying
+Pattern: bull flag
+Plan: bull flag: buy flag support, target measured move
+LONG · entry 2.31% away · R:R 2.45
+```
+
+That is the whole briefing: the verdict, the score behind it, what volume says,
+the pattern found, the strategy applied, and how far price must travel.
+
+### Step 3 — decide whether the setup is worth taking
+
+Take it seriously when **all** of these hold:
+
+- Verdict reads **UPTREND** or **DOWNTREND**, not *NO CLEAR TREND*
+- Winning score is **70+** and clearly beats the other side
+- Volume line says **"volume confirms"** — not *"mixed"* or *"no volume data"*
+- Pattern is a **named** one (bull flag, double bottom, breakout), not generic
+  *trend* or *range*
+- **R:R is 2.0 or better**
+
+Skip it when the verdict is *NO CLEAR TREND* — a range fade is the weakest setup
+the script produces. Waiting costs nothing.
+
+### Step 4 — place the orders (do not market-buy)
+
+The entry sits **below** price for longs and **above** price for shorts on
+purpose — it is a level price still has to come to. So:
+
+1. **Limit order** at the ENTRY price
+2. **Stop-loss order** at the STOP LOSS price
+3. **Take-profit order** at the TAKE PROFIT price
+
+If entry is <1% away it is imminent; 5%+ makes it a watchlist item, not a trade.
+
+### Step 5 — size the position off the stop
+
+This is the most valuable number on the chart. Risk a fixed slice of your account
+(1–2% is the common rule):
+
+```
+shares = (account × risk%) ÷ (entry − stop)
+```
+
+£10,000 account, 1% risk (£100), entry 250, stop 240 → £100 ÷ 10 = **10 shares**.
+Because the stop is set by structure rather than a round guess, this keeps every
+trade the same real risk regardless of volatility.
+
+### Step 6 — let the alerts do the watching
+
+⏰ → Create Alert → this indicator → choose:
+
+- **Price reached entry** — your cue to act
+- **Uptrend confirmed** / **Downtrend confirmed** — for scanning a watchlist
+
+### A strong two-pass workflow
+
+Because the plan timeframe is fixed, you can run the analysis twice:
+
+1. Set Plan Timeframe = **Weekly**, note the verdict (the big-picture direction).
+2. Switch it to **Daily** and take the entry only if it agrees with the weekly
+   verdict.
+
+Trading daily setups in the direction of the weekly trend filters out most of the
+weak signals.
+
+### What to watch out for
+
+- **It is not a backtest.** It shows no proof of edge on your symbol. If you want
+  historical win-rate, profit factor and expectancy, run the full version
+  (`chart-analyzer-bot.pine`) which tracks every setup it ever produced.
+- **After a stop is hit it plans again immediately.** A fresh plan appearing right
+  after a loss is not a signal to jump back in — judge it on Step 3 like any other.
+- **No-volume symbols lose the strongest angle.** Many forex and index CFDs carry
+  no real volume; the score goes neutral there, so lean harder on structure.
+- Nothing here is financial advice — validate on your own instrument before
+  risking money.
+
+---
+
+## Reference
 
 **What the analysis actually does** (all of it happens under the hood — none of it
 is drawn):
