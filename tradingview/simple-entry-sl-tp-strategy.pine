@@ -1,11 +1,14 @@
 //@version=6
-// Simple Entry / Stop / Target
-// The plan is built on a FIXED timeframe (default Daily) no matter which chart
-// you are looking at, so switching the chart view never moves the levels. It
-// waits until at least a month of history is loaded, then locks one plan and
-// holds it until price hits it or it is invalidated.
-// Only three levels are drawn: entry, stop loss, take profit.
-indicator("Simple Entry / SL / TP", overlay=true, max_lines_count=20, max_labels_count=20)
+// Simple Entry / Stop / Target — BACKTEST VERSION
+//
+// Identical analysis to the "Simple Entry / SL / TP" indicator, wired into
+// TradingView's Strategy Tester so you can see whether the plans actually made
+// money: net profit, win rate, profit factor, max drawdown and the equity curve.
+//
+// Every plan becomes a real order: a limit at the entry, bracketed by the stop
+// and the target. Position size is calculated from your risk % and the distance
+// to the stop, exactly as the indicator's guidance describes.
+strategy("Simple Entry / SL / TP — Backtest", overlay=true, max_lines_count=20, max_labels_count=20, initial_capital=10000, currency=currency.NONE, default_qty_type=strategy.fixed, default_qty_value=1, commission_type=strategy.commission.percent, commission_value=0.05, slippage=2, pyramiding=0)
 
 gPlan = "Plan"
 gA    = "Analysis"
@@ -51,6 +54,14 @@ tpMode    = input.string("Structure + min R", "Take Profit", options=["Structure
 
 projBars   = input.int(30, "Project Forward (bars)", group=gD)
 showStatus = input.bool(true, "Show analysis status", group=gD)
+
+gBT       = "Backtest"
+riskPct   = input.float(1.0, "Risk per trade (% of equity)", minval=0.1, step=0.1, group=gBT)
+maxHold   = input.int(0, "Give up if entry not filled within N bars (0 = never)", minval=0, group=gBT)
+exitFlip  = input.bool(false, "Close an open trade if the trend flips", group=gBT)
+btFrom    = input.time(timestamp("1 Jan 2015"), "Backtest From", group=gBT)
+btTo      = input.time(timestamp("1 Jan 2099"), "Backtest To", group=gBT)
+inWindow  = time >= btFrom and time <= btTo
 
 // ============================================================================
 // ANCHOR TIMEFRAMES — the plan timeframe and the one above it for context
@@ -483,6 +494,61 @@ var table stTable = table.new(position.bottom_left, 1, 1, border_width=1)
 if showStatus and barstate.islast
     bg = not planOn ? color.new(color.orange, 15) : planBias == 1 ? color.new(color.green, 15) : color.new(color.red, 25)
     table.cell(stTable, 0, 0, planOn ? readyTxt : waitTxt, text_color=color.white, bgcolor=bg, text_size=size.small, text_halign=text.align_left)
+
+// ============================================================================
+// ORDERS — every locked plan becomes a real bracketed limit order
+// ============================================================================
+// Size from risk: risking riskPct of equity across the distance to the stop,
+// so each trade carries the same real risk regardless of volatility.
+riskCash  = strategy.equity * riskPct / 100.0
+stopDistU = planOn and not na(planEntry) and not na(planStop) ? math.abs(planEntry - planStop) : na
+qty       = not na(stopDistU) and stopDistU > 0 ? riskCash / stopDistU : na
+
+// Exit levels are snapshotted when the position opens, so a later re-plan can
+// never move the stop on a trade that is already running.
+var float posStop = na
+var float posTgt  = na
+var int   posBias = 0
+var int   lastPlanBar = na
+
+flat = strategy.position_size == 0
+
+// A newly formed plan cancels any entry still resting from the previous one
+if planOn and planBarIx != lastPlanBar
+    lastPlanBar := planBarIx
+    if flat
+        strategy.cancel_all()
+
+if inWindow and planOn and flat and not na(qty) and qty > 0
+    if planBias == 1
+        strategy.entry("Long", strategy.long, qty=qty, limit=planEntry)
+    else
+        strategy.entry("Short", strategy.short, qty=qty, limit=planEntry)
+
+// Capture the bracket at the moment of the fill
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    posStop := planStop
+    posTgt  := planTgt
+    posBias := planBias
+
+if strategy.position_size > 0 and not na(posStop) and not na(posTgt)
+    strategy.exit("Exit L", "Long", stop=posStop, limit=posTgt)
+if strategy.position_size < 0 and not na(posStop) and not na(posTgt)
+    strategy.exit("Exit S", "Short", stop=posStop, limit=posTgt)
+
+// Optional: abandon an entry that never got filled
+if maxHold > 0 and flat and planOn and not na(planBarIx) and (bar_index - planBarIx) > maxHold
+    strategy.cancel_all()
+
+// Optional: leave an open trade when the trend turns against it
+if exitFlip and strategy.position_size != 0 and posBias != 0 and bias != posBias
+    strategy.close_all(comment="trend flip")
+
+// Outside the backtest window, stand aside
+if not inWindow
+    strategy.cancel_all()
+    if strategy.position_size != 0
+        strategy.close_all(comment="outside window")
 
 // ============================================================================
 // ALERTS

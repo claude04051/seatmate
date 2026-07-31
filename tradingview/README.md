@@ -3,7 +3,46 @@
 | File | Use it if you want |
 |---|---|
 | **`simple-entry-sl-tp.pine`** ← **start here** | Just three lines on the chart: **entry, stop loss, take profit**. Nothing else. |
+| **`simple-entry-sl-tp-strategy.pine`** | The **same logic as a backtest** — run it to see net profit, win rate, profit factor, drawdown and the equity curve in TradingView's Strategy Tester. |
 | `chart-analyzer-bot.pine` | The full version: multi-timeframe scoring, historical setups, performance dashboard. |
+
+## Backtesting it (`simple-entry-sl-tp-strategy.pine`)
+
+Same analysis, same levels — but every locked plan is placed as a real order, so
+TradingView's Strategy Tester reports whether it actually made money.
+
+1. Pine Editor → paste `simple-entry-sl-tp-strategy.pine` → Save → **Add to chart**.
+2. Open the **Strategy Tester** tab at the bottom. You get net profit, **win rate**,
+   **profit factor**, **max drawdown**, average trade and the full equity curve.
+3. Match its settings to the indicator's (same Plan Timeframe etc.) so the backtest
+   describes the setups you're actually being shown.
+
+**How the trades are modelled**
+
+- Each plan becomes a **limit order at the entry**, bracketed by the **stop** and
+  the **target** — the same three prices the indicator draws.
+- **Position size comes from risk**, not a fixed share count:
+  `qty = (equity × Risk %) ÷ (entry − stop)`, so every trade risks the same
+  percentage of the account. Default 1%.
+- Exit levels are **snapshotted at fill**, so a later re-plan can never move the
+  stop on a trade that's already running.
+- Defaults include **0.05% commission and 2 ticks of slippage** — results with
+  zero costs are fiction, so they're on from the start.
+
+**Backtest-specific settings**
+
+| Setting | What it does |
+|---|---|
+| Risk per trade (%) | Position sizing; 1% is the usual starting point |
+| Give up if entry not filled within N bars | Cancels stale resting orders (0 = never) |
+| Close an open trade if the trend flips | Off by default — stop and target only |
+| Backtest From / To | Restrict the test to a date window |
+
+**Reading the result honestly:** a strategy needs a decent sample before it means
+anything — under ~30 trades the numbers are noise. Check that **profit factor > 1.3**
+and that max drawdown is something you could actually sit through. Test more than
+one symbol; a result that only works on one ticker is usually curve-fitted.
+Past performance is not a promise about the future.
 
 ---
 
@@ -229,10 +268,11 @@ Choose *Recalculate every bar* if you'd rather see the levels update continuousl
 ### Waiting for history
 
 `Minimum History Before Planning (days)` (default 30) stops it from planning off a
-thin chart — until that much history is loaded it shows `⏳ COLLECTING HISTORY`
-with a live count. In practice TradingView loads years of data as soon as a symbol
-opens, so this usually clears immediately; it matters on newly listed tickers or
-when data is sparse. If it does stick, scroll left to pull in more bars.
+thin chart. The requirement is converted into **plan-timeframe bars** and measured
+there — so a 5-minute chart, which only loads a few days of candles, no longer
+blocks a Daily plan that has years of history behind it. Until the requirement is
+met it shows `⏳ COLLECTING HISTORY` with the bar count it needs versus what it has;
+scroll left to pull in more.
 
 ### Switching timeframes
 
