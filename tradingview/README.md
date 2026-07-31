@@ -100,15 +100,49 @@ the right so you can see the expected move.
 The levels **recalculate on every new bar**, so what you see is always the latest,
 most relevant setup for the timeframe on screen.
 
+### The plan does not move when you switch chart timeframes
+
+The levels are built on a **fixed Plan Timeframe** (default **Daily**) — not on
+whatever chart you happen to be looking at. Flip the chart between 1H, daily,
+weekly and monthly and the entry, stop and target stay exactly where they were,
+because every measurement (swings, ATR, EMAs, ADX, volume, patterns) is requested
+from the plan timeframe.
+
+Set `Plan Timeframe` to Weekly or Monthly if you want a slower, bigger-picture
+plan. Setting it to `Chart` restores the old behaviour of following the chart.
+
+**One rule:** view the chart at the plan timeframe **or lower**. Looking at a
+monthly chart while planning on Daily means the daily structure can't be resolved
+properly — the status box warns you when that happens.
+
+### Plan locking
+
+By default (`Plan Updates` = *Hold until hit or invalidated*) the script commits
+**one** plan and holds it. The levels stop drifting bar to bar. A plan is only
+replaced when:
+
+- price reaches the **stop**, or
+- price reaches the **target**, or
+- the trend direction **flips** (switch off with `Invalidate plan if trend
+  direction flips`).
+
+Choose *Recalculate every bar* if you'd rather see the levels update continuously.
+
+### Waiting for history
+
+`Minimum History Before Planning (days)` (default 30) stops it from planning off a
+thin chart — until that much history is loaded it shows `⏳ COLLECTING HISTORY`
+with a live count. In practice TradingView loads years of data as soon as a symbol
+opens, so this usually clears immediately; it matters on newly listed tickers or
+when data is sparse. If it does stick, scroll left to pull in more bars.
+
 ### Switching timeframes
 
-Every reading comes from the chart's own candles, so changing the timeframe —
-daily → weekly → monthly → yearly, or down to intraday — re-runs the whole
-analysis on that timeframe's bars. The trend, swings, ranges, entry, stop and
-target all re-derive, and the higher-timeframe confirmation layer re-points
-automatically (daily confirms against weekly, weekly against monthly, and so on).
-It reads whatever symbol the chart is on, too — switch tickers and it re-analyses
-that one.
+With `Plan Timeframe` set to `Chart`, every reading comes from the chart's own
+candles, so changing the timeframe re-runs the whole analysis on those bars — and
+the levels will move each time you switch. With any fixed plan timeframe (the
+default), they stay put. Either way it reads whatever symbol the chart is on, so
+switching tickers re-analyses the new one.
 
 **Status readout (bottom-left):** because bigger timeframes take a moment to load
 history, a small box tells you where the analysis stands:

@@ -1,21 +1,27 @@
 //@version=6
 // Simple Entry / Stop / Target
-// Reads whatever timeframe the chart is showing (days, weeks, months, intraday) and
-// judges trend from four independent angles — market structure (higher highs/lows),
-// moving-average alignment, directional strength, and VOLUME — then looks for a
-// tradable chart pattern and builds a strategy around it.
+// The plan is built on a FIXED timeframe (default Daily) no matter which chart
+// you are looking at, so switching the chart view never moves the levels. It
+// waits until at least a month of history is loaded, then locks one plan and
+// holds it until price hits it or it is invalidated.
 // Only three levels are drawn: entry, stop loss, take profit.
 indicator("Simple Entry / SL / TP", overlay=true, max_lines_count=20, max_labels_count=20)
 
-gA = "Analysis"
-gV = "Volume"
-gP = "Patterns"
-gT = "Trade"
-gD = "Display"
+gPlan = "Plan"
+gA    = "Analysis"
+gV    = "Volume"
+gP    = "Patterns"
+gT    = "Trade"
+gD    = "Display"
 
 // ============================================================================
-// INPUTS
+// PLAN SETTINGS — what the analysis is anchored to
 // ============================================================================
+planTFsel  = input.string("Daily", "Plan Timeframe (levels come from this, not the chart)", options=["Chart", "Daily", "Weekly", "Monthly"], group=gPlan)
+minHistDay = input.int(30, "Minimum History Before Planning (days)", minval=1, group=gPlan)
+lockMode   = input.string("Hold until hit or invalidated", "Plan Updates", options=["Hold until hit or invalidated", "Recalculate every bar"], group=gPlan)
+relockFlip = input.bool(true, "Invalidate plan if trend direction flips", group=gPlan)
+
 fastLen   = input.int(20,  "Trend EMA (fast)", group=gA)
 slowLen   = input.int(50,  "Trend EMA (slow)", group=gA)
 pivotLen  = input.int(10,  "Structure Lookback (swing size)", group=gA)
@@ -24,7 +30,6 @@ rangeLen  = input.int(40,  "Range Lookback", group=gA)
 atrLen    = input.int(14,  "ATR Length", group=gA)
 adxLen    = input.int(14,  "Trend Strength (ADX) Length", group=gA)
 adxMin    = input.float(20.0, "Treat as trending above ADX", step=1.0, group=gA)
-useHTF    = input.bool(true, "Use higher-timeframe context", group=gA)
 useRound  = input.bool(true, "Include round-number levels", group=gA)
 holdBars  = input.int(3, "Direction Stability (bars)", minval=1, group=gA)
 trendMin  = input.int(60, "Trend Score needed to follow trend (0-100)", minval=0, maxval=100, group=gA)
@@ -48,50 +53,56 @@ projBars   = input.int(30, "Project Forward (bars)", group=gD)
 showStatus = input.bool(true, "Show analysis status", group=gD)
 
 // ============================================================================
-// CORE MEASURES
+// ANCHOR TIMEFRAMES — the plan timeframe and the one above it for context
 // ============================================================================
-atrVal = ta.atr(atrLen)
-emaF   = ta.ema(close, fastLen)
-emaS   = ta.ema(close, slowLen)
+chartAutoHTF = timeframe.isseconds ? "60" : timeframe.isintraday ? (timeframe.multiplier <= 15 ? "240" : "D") : timeframe.isdaily ? "W" : timeframe.isweekly ? "M" : "12M"
 
-[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
-trending = adxVal >= adxMin
-dmiBias  = diPlus > diMinus ? 1 : -1
-
-// Moving-average alignment: price above both and fast above slow is a clean uptrend
-maUp   = na(emaS) ? close > emaF : (close > emaF and emaF > emaS)
-maDown = na(emaS) ? close < emaF : (close < emaF and emaF < emaS)
+planTF   = planTFsel == "Chart" ? timeframe.period : planTFsel == "Daily" ? "D" : planTFsel == "Weekly" ? "W" : "M"
+higherTF = planTFsel == "Chart" ? chartAutoHTF : planTFsel == "Daily" ? "W" : planTFsel == "Weekly" ? "M" : "12M"
 
 // ============================================================================
-// HIGHER-TIMEFRAME CONTEXT (derived automatically from the chart timeframe)
+// ALL MEASUREMENTS TAKEN ON THE PLAN TIMEFRAME
+// (this is why changing the chart timeframe no longer moves the levels)
 // ============================================================================
-autoHTF   = timeframe.isseconds ? "60" : timeframe.isintraday ? (timeframe.multiplier <= 15 ? "240" : "D") : timeframe.isdaily ? "W" : timeframe.isweekly ? "M" : "12M"
-htfDiff   = request.security(syminfo.tickerid, autoHTF, ta.ema(close, fastLen) - ta.ema(close, slowLen), lookahead=barmerge.lookahead_off)
-htfBias   = not useHTF or na(htfDiff) ? 0 : (htfDiff > 0 ? 1 : -1)
+aClose                       = request.security(syminfo.tickerid, planTF, close, lookahead=barmerge.lookahead_off)
+[aAtr, aEmaF, aEmaS]         = request.security(syminfo.tickerid, planTF, [ta.atr(atrLen), ta.ema(close, fastLen), ta.ema(close, slowLen)], lookahead=barmerge.lookahead_off)
+[aDiP, aDiM, aAdx]           = request.security(syminfo.tickerid, planTF, ta.dmi(adxLen, adxLen), lookahead=barmerge.lookahead_off)
+[aPh, aPl]                   = request.security(syminfo.tickerid, planTF, [ta.pivothigh(high, pivotLen, pivotLen), ta.pivotlow(low, pivotLen, pivotLen)], lookahead=barmerge.lookahead_off)
+[aRngHi, aRngLo]             = request.security(syminfo.tickerid, planTF, [ta.highest(high, rangeLen), ta.lowest(low, rangeLen)], lookahead=barmerge.lookahead_off)
+[aVolNow, aVolAvg]           = request.security(syminfo.tickerid, planTF, [volume, ta.sma(volume, volLen)], lookahead=barmerge.lookahead_off)
+[aObv, aObvSig]              = request.security(syminfo.tickerid, planTF, [ta.obv, ta.ema(ta.obv, volLen)], lookahead=barmerge.lookahead_off)
+[aUpVol, aDnVol]             = request.security(syminfo.tickerid, planTF, [math.sum(close > open ? volume : 0.0, volLen), math.sum(close < open ? volume : 0.0, volLen)], lookahead=barmerge.lookahead_off)
+[aPoleLo, aPoleHi, aFlagHi, aFlagLo] = request.security(syminfo.tickerid, planTF, [ta.lowest(low, poleLen + flagLen), ta.highest(high, poleLen + flagLen), ta.highest(high, flagLen), ta.lowest(low, flagLen)], lookahead=barmerge.lookahead_off)
+[aVolFlag, aVolPole]         = request.security(syminfo.tickerid, planTF, [ta.sma(volume, flagLen), ta.sma(volume, poleLen)], lookahead=barmerge.lookahead_off)
+htfDiff                      = request.security(syminfo.tickerid, higherTF, ta.ema(close, fastLen) - ta.ema(close, slowLen), lookahead=barmerge.lookahead_off)
+
+trending = aAdx >= adxMin
+dmiBias  = aDiP > aDiM ? 1 : -1
+maUp     = na(aEmaS) ? aClose > aEmaF : (aClose > aEmaF and aEmaF > aEmaS)
+maDown   = na(aEmaS) ? aClose < aEmaF : (aClose < aEmaF and aEmaF < aEmaS)
+htfBias  = na(htfDiff) ? 0 : (htfDiff > 0 ? 1 : -1)
 
 // ============================================================================
 // MARKET STRUCTURE — higher highs / higher lows is the definition of an uptrend
 // ============================================================================
-phv = ta.pivothigh(high, pivotLen, pivotLen)
-plv = ta.pivotlow(low,  pivotLen, pivotLen)
-
 var float swHi = na
 var float swLo = na
 var pHighs = array.new_float()
 var pLows  = array.new_float()
 
-if not na(phv)
-    swHi := phv
-    array.push(pHighs, phv)
+// The requested pivot repeats for every chart bar inside one plan-timeframe bar,
+// so only store it when it is genuinely a new swing.
+if not na(aPh) and (na(swHi) or aPh != swHi)
+    swHi := aPh
+    array.push(pHighs, aPh)
     if array.size(pHighs) > maxSwings
         array.shift(pHighs)
-if not na(plv)
-    swLo := plv
-    array.push(pLows, plv)
+if not na(aPl) and (na(swLo) or aPl != swLo)
+    swLo := aPl
+    array.push(pLows, aPl)
     if array.size(pLows) > maxSwings
         array.shift(pLows)
 
-// nth-from-last element (0 = most recent)
 back(a, k) =>
     array.size(a) > k ? array.get(a, array.size(a) - 1 - k) : na
 
@@ -108,51 +119,36 @@ lowerLows   = not na(lo0) and not na(lo1) and lo0 < lo1
 structUp   = higherHighs and higherLows
 structDown = lowerHighs and lowerLows
 
-// Break of structure: price closing beyond the most recent opposing swing
-bosUp   = not na(hi0) and close > hi0
-bosDown = not na(lo0) and close < lo0
+bosUp   = not na(hi0) and aClose > hi0
+bosDown = not na(lo0) and aClose < lo0
 
 haveLeg  = not na(swHi) and not na(swLo)
 legRange = haveLeg ? math.abs(swHi - swLo) : na
 
-rngHi    = ta.highest(high, rangeLen)
-rngLo    = ta.lowest(low,  rangeLen)
-rngSize  = math.max(rngHi - rngLo, syminfo.mintick)
-rangePos = (close - rngLo) / rngSize
+rngSize  = math.max(aRngHi - aRngLo, syminfo.mintick)
+rangePos = (aClose - aRngLo) / rngSize
 
 // ============================================================================
 // VOLUME — does participation actually back the move?
 // ============================================================================
-volAvg   = ta.sma(volume, volLen)
-hasVol   = not na(volAvg) and volAvg > 0        // some symbols carry no volume feed
-obvVal   = ta.obv
-obvSig   = ta.ema(obvVal, volLen)
-obvUp    = hasVol and not na(obvSig) and obvVal > obvSig
-obvDown  = hasVol and not na(obvSig) and obvVal < obvSig
+hasVol  = not na(aVolAvg) and aVolAvg > 0
+obvUp   = hasVol and not na(aObvSig) and aObv > aObvSig
+obvDown = hasVol and not na(aObvSig) and aObv < aObvSig
+volBull = hasVol and aUpVol > aDnVol
+volBear = hasVol and aDnVol > aUpVol
+volExpand = hasVol and aVolNow > aVolAvg * volSpike
 
-// Volume traded on up bars vs down bars over the lookback
-upVol   = math.sum(close > open ? volume : 0.0, volLen)
-downVol = math.sum(close < open ? volume : 0.0, volLen)
-volBull = hasVol and upVol > downVol
-volBear = hasVol and downVol > upVol
-
-// Is right now an expansion of participation (breakout fuel)?
-volExpand = hasVol and volume > volAvg * volSpike
-
-// Volume verdict for the up case: accumulation showing in OBV and up-bar volume
 volConfirmsUp   = obvUp and volBull
 volConfirmsDown = obvDown and volBear
 
 // ============================================================================
-// TREND SCORE (0-100) — four independent angles, so no single lagging
-// indicator can declare a trend on its own
+// TREND SCORE (0-100) — four independent angles
 // ============================================================================
 scoreUp = 0
 scoreUp += structUp ? 30 : higherLows or higherHighs ? 15 : 0
 scoreUp += maUp ? 20 : 0
 scoreUp += (trending and dmiBias == 1) ? 15 : 0
 scoreUp += htfBias == 1 ? 10 : 0
-// Volume carries real weight; symbols without a volume feed score neutral
 scoreUp += not hasVol ? 13 : volConfirmsUp ? 25 : obvUp or volBull ? 12 : 0
 
 scoreDn = 0
@@ -162,22 +158,17 @@ scoreDn += (trending and dmiBias == -1) ? 15 : 0
 scoreDn += htfBias == -1 ? 10 : 0
 scoreDn += not hasVol ? 13 : volConfirmsDown ? 25 : obvDown or volBear ? 12 : 0
 
-// A trend is only followed when its score clears the bar and volume does not
-// contradict it (when volume confirmation is required).
 volVetoUp   = useVolume and hasVol and volConfirmsDown
 volVetoDown = useVolume and hasVol and volConfirmsUp
 
-upTrend   = scoreUp   >= trendMin and scoreUp > scoreDn and not volVetoUp
-downTrend = scoreDn   >= trendMin and scoreDn > scoreUp and not volVetoDown
+upTrend   = scoreUp >= trendMin and scoreUp > scoreDn and not volVetoUp
+downTrend = scoreDn >= trendMin and scoreDn > scoreUp and not volVetoDown
 trendMode = upTrend or downTrend
 
 biasTrend = upTrend ? 1 : downTrend ? -1 : (scoreUp >= scoreDn ? 1 : -1)
 biasRange = rangePos > 0.5 ? -1 : 1
 rawBias   = trendMode ? biasTrend : biasRange
 
-// ----------------------------------------------------------------------------
-// DIRECTION STABILITY — a flip must persist before the levels are redrawn
-// ----------------------------------------------------------------------------
 var int heldBias    = 0
 var int pendingBias = 0
 var int pendingCnt  = 0
@@ -197,34 +188,22 @@ else
 bias = heldBias
 
 // ============================================================================
-// CHART PATTERNS — each one carries its own entry, invalidation and objective
+// CHART PATTERNS
 // ============================================================================
-poleBase   = ta.lowest(low,  poleLen + flagLen)
-poleTop    = ta.highest(high, poleLen + flagLen)
-flagHigh   = ta.highest(high, flagLen)
-flagLow    = ta.lowest(low,  flagLen)
-flagRange  = flagHigh - flagLow
-volFlagDry = hasVol and ta.sma(volume, flagLen) < ta.sma(volume, poleLen)
+flagRange  = aFlagHi - aFlagLo
+volFlagDry = hasVol and aVolFlag < aVolPole
+poleSize   = aPoleHi - aPoleLo
+strongPole = poleSize > aAtr * 3 and flagRange < poleSize * 0.5 and (not hasVol or volFlagDry)
 
-// Height of the impulse the consolidation is resting on
-poleSize = poleTop - poleBase
-strongPole = poleSize > atrVal * 3 and flagRange < poleSize * 0.5 and (not hasVol or volFlagDry)
+bullFlag = usePatterns and strongPole and aClose > aPoleLo + poleSize * 0.5 and (higherLows or maUp)
+bearFlag = usePatterns and strongPole and aClose < aPoleHi - poleSize * 0.5 and (lowerHighs or maDown)
 
-// Bull flag: strong advance, then a tight drift high in its range on drying volume
-bullFlag = usePatterns and strongPole and close > poleBase + poleSize * 0.5 and (higherLows or maUp)
+doubleBottom = usePatterns and not na(lo0) and not na(lo1) and math.abs(lo0 - lo1) <= aAtr * 0.75 and not na(hi0) and hi0 > math.max(lo0, lo1) and aClose > math.max(lo0, lo1)
+doubleTop    = usePatterns and not na(hi0) and not na(hi1) and math.abs(hi0 - hi1) <= aAtr * 0.75 and not na(lo0) and lo0 < math.min(hi0, hi1) and aClose < math.min(hi0, hi1)
 
-// Bear flag: mirror image
-bearFlag = usePatterns and strongPole and close < poleTop - poleSize * 0.5 and (lowerHighs or maDown)
+ascTriangle  = usePatterns and not na(hi0) and not na(hi1) and math.abs(hi0 - hi1) <= aAtr * 0.5 and higherLows
+descTriangle = usePatterns and not na(lo0) and not na(lo1) and math.abs(lo0 - lo1) <= aAtr * 0.5 and lowerHighs
 
-// Double bottom: two lows at a similar price with a peak between, price reclaiming it
-doubleBottom = usePatterns and not na(lo0) and not na(lo1) and math.abs(lo0 - lo1) <= atrVal * 0.75 and not na(hi0) and hi0 > math.max(lo0, lo1) and close > math.max(lo0, lo1)
-doubleTop    = usePatterns and not na(hi0) and not na(hi1) and math.abs(hi0 - hi1) <= atrVal * 0.75 and not na(lo0) and lo0 < math.min(hi0, hi1) and close < math.min(hi0, hi1)
-
-// Ascending triangle: flat resistance, rising lows -> continuation higher
-ascTriangle  = usePatterns and not na(hi0) and not na(hi1) and math.abs(hi0 - hi1) <= atrVal * 0.5 and higherLows
-descTriangle = usePatterns and not na(lo0) and not na(lo1) and math.abs(lo0 - lo1) <= atrVal * 0.5 and lowerHighs
-
-// Volume-backed breakout of the prior swing
 breakoutUp   = usePatterns and bosUp   and volExpand
 breakoutDown = usePatterns and bosDown and volExpand
 
@@ -260,67 +239,64 @@ nearestSide(arr, isLong, ref) =>
     best
 
 // ============================================================================
-// STRATEGY — the pattern decides the plan; otherwise fall back to confluence
+// CANDIDATE PLAN (recomputed every bar; only committed when allowed)
 // ============================================================================
 float entry  = na
 float stopL  = na
 float target = na
 string planTxt = "confluence pullback"
 
-if not na(atrVal) and atrVal > 0
+if not na(aAtr) and aAtr > 0
     float pEntry = na
     float pStop  = na
     float pTgt   = na
 
-    // ---- Pattern-specific plans -------------------------------------------
     if bias == 1 and bullFlag
-        pEntry  := flagLow + flagRange * 0.25       // buy into flag support
-        pStop   := flagLow - atrVal * slBuffer
-        pTgt    := pEntry + poleSize                  // measured move of the pole
+        pEntry  := aFlagLo + flagRange * 0.25
+        pStop   := aFlagLo - aAtr * slBuffer
+        pTgt    := pEntry + poleSize
         planTxt := "bull flag: buy flag support, target measured move"
     else if bias == 1 and doubleBottom
         neck    = hi0
-        pEntry  := math.min(neck, close) - atrVal * 0.25   // retest of the neckline
-        pStop   := math.min(lo0, lo1) - atrVal * slBuffer
-        pTgt    := neck + (neck - math.min(lo0, lo1))      // pattern height projected
+        pEntry  := math.min(neck, aClose) - aAtr * 0.25
+        pStop   := math.min(lo0, lo1) - aAtr * slBuffer
+        pTgt    := neck + (neck - math.min(lo0, lo1))
         planTxt := "double bottom: buy neckline retest, target pattern height"
     else if bias == 1 and ascTriangle
-        pEntry  := math.max(lo0, close - atrVal)    // buy the rising trendline
-        pStop   := lo0 - atrVal * slBuffer
-        pTgt    := hi0 + (hi0 - lo0)                // breakout measured move
+        pEntry  := math.max(lo0, aClose - aAtr)
+        pStop   := lo0 - aAtr * slBuffer
+        pTgt    := hi0 + (hi0 - lo0)
         planTxt := "ascending triangle: buy rising support, target breakout move"
     else if bias == 1 and breakoutUp
-        pEntry  := hi0                              // retest of the broken level
-        pStop   := hi0 - math.max(atrVal * slBuffer, flagRange * 0.5)
+        pEntry  := hi0
+        pStop   := hi0 - math.max(aAtr * slBuffer, flagRange * 0.5)
         pTgt    := hi0 + poleSize * 0.75
         planTxt := "volume breakout: buy the retest, ride the expansion"
     else if bias == -1 and bearFlag
-        pEntry  := flagHigh - flagRange * 0.25
-        pStop   := flagHigh + atrVal * slBuffer
+        pEntry  := aFlagHi - flagRange * 0.25
+        pStop   := aFlagHi + aAtr * slBuffer
         pTgt    := pEntry - poleSize
         planTxt := "bear flag: sell flag resistance, target measured move"
     else if bias == -1 and doubleTop
         neck2   = lo0
-        pEntry  := math.max(neck2, close) + atrVal * 0.25
-        pStop   := math.max(hi0, hi1) + atrVal * slBuffer
+        pEntry  := math.max(neck2, aClose) + aAtr * 0.25
+        pStop   := math.max(hi0, hi1) + aAtr * slBuffer
         pTgt    := neck2 - (math.max(hi0, hi1) - neck2)
         planTxt := "double top: sell neckline retest, target pattern height"
     else if bias == -1 and breakoutDown
         pEntry  := lo0
-        pStop   := lo0 + math.max(atrVal * slBuffer, flagRange * 0.5)
+        pStop   := lo0 + math.max(aAtr * slBuffer, flagRange * 0.5)
         pTgt    := lo0 - poleSize * 0.75
         planTxt := "volume breakdown: sell the retest, ride the expansion"
 
-    // A pattern plan is only used if its entry is still on the tradable side
-    patOk = not na(pEntry) and (bias == 1 ? pEntry < close : pEntry > close) and math.abs(close - pEntry) <= atrVal * maxDistA
+    patOk = not na(pEntry) and (bias == 1 ? pEntry < aClose : pEntry > aClose) and math.abs(aClose - pEntry) <= aAtr * maxDistA
 
     if patOk
         entry := pEntry
         stopL := pStop
     else
-        // ---- Confluence fallback ------------------------------------------
         planTxt := trendMode ? "trend pullback into confluence" : "range: fade the edge"
-        tol     = atrVal * 0.5
+        tol     = aAtr * 0.5
         levels  = array.new_float()
 
         if trendMode and haveLeg
@@ -332,14 +308,14 @@ if not na(atrVal) and atrVal > 0
                 array.push(levels, swLo + legRange * 0.382)
                 array.push(levels, swLo + legRange * 0.5)
                 array.push(levels, swLo + legRange * 0.618)
-            array.push(levels, emaF)
+            array.push(levels, aEmaF)
         else
             if bias == 1
-                array.push(levels, rngLo + rngSize * 0.15)
-                array.push(levels, rngLo)
+                array.push(levels, aRngLo + rngSize * 0.15)
+                array.push(levels, aRngLo)
             else
-                array.push(levels, rngHi - rngSize * 0.15)
-                array.push(levels, rngHi)
+                array.push(levels, aRngHi - rngSize * 0.15)
+                array.push(levels, aRngHi)
 
         src = bias == 1 ? pLows : pHighs
         if array.size(src) > 0
@@ -351,9 +327,9 @@ if not na(atrVal) and atrVal > 0
                 array.push(levels, array.get(flip, i))
 
         if useRound
-            roundStep = math.pow(10, math.floor(math.log10(math.max(close, syminfo.mintick))) - 1)
+            roundStep = math.pow(10, math.floor(math.log10(math.max(aClose, syminfo.mintick))) - 1)
             if roundStep > 0
-                base = bias == 1 ? math.floor(close / roundStep) * roundStep : math.ceil(close / roundStep) * roundStep
+                base = bias == 1 ? math.floor(aClose / roundStep) * roundStep : math.ceil(aClose / roundStep) * roundStep
                 array.push(levels, base)
                 array.push(levels, bias == 1 ? base - roundStep : base + roundStep)
 
@@ -362,25 +338,24 @@ if not na(atrVal) and atrVal > 0
         if array.size(levels) > 0
             for i = 0 to array.size(levels) - 1
                 lv = array.get(levels, i)
-                if not na(lv) and (bias == 1 ? lv < close : lv > close)
+                if not na(lv) and (bias == 1 ? lv < aClose : lv > aClose)
                     array.push(side, lv)
-                    if math.abs(close - lv) <= atrVal * maxDistA
+                    if math.abs(aClose - lv) <= aAtr * maxDistA
                         array.push(reach, lv)
 
         confluent = pickLevel(reach, bias == 1, tol)
-        nearest   = nearestSide(side, bias == 1, close)
+        nearest   = nearestSide(side, bias == 1, aClose)
         if not na(confluent)
             entry := confluent
         else if not na(nearest)
             entry := nearest
         else
-            entry := bias == 1 ? close - 0.5 * atrVal : close + 0.5 * atrVal
+            entry := bias == 1 ? aClose - 0.5 * aAtr : aClose + 0.5 * aAtr
 
-        anchor  = trendMode and haveLeg ? (bias == 1 ? math.min(swLo, entry) : math.max(swHi, entry)) : (bias == 1 ? math.min(rngLo, entry) : math.max(rngHi, entry))
-        stopL  := bias == 1 ? anchor - atrVal * slBuffer : anchor + atrVal * slBuffer
+        anchor  = trendMode and haveLeg ? (bias == 1 ? math.min(swLo, entry) : math.max(swHi, entry)) : (bias == 1 ? math.min(aRngLo, entry) : math.max(aRngHi, entry))
+        stopL  := bias == 1 ? anchor - aAtr * slBuffer : anchor + aAtr * slBuffer
 
-    // ---- Shared risk rules: stop never inside noise, target never under min R
-    stopDist = math.max(math.abs(entry - stopL), atrVal * minStopA)
+    stopDist = math.max(math.abs(entry - stopL), aAtr * minStopA)
     stopL   := bias == 1 ? entry - stopDist : entry + stopDist
 
     risk    = math.max(math.abs(entry - stopL), syminfo.mintick)
@@ -392,12 +367,65 @@ if not na(atrVal) and atrVal > 0
     else if trendMode and haveLeg
         sTarget := bias == 1 ? swLo + legRange * extRatio : swHi - legRange * extRatio
     else
-        sTarget := bias == 1 ? rngHi - rngSize * 0.1 : rngLo + rngSize * 0.1
+        sTarget := bias == 1 ? aRngHi - rngSize * 0.1 : aRngLo + rngSize * 0.1
 
     target := tpMode == "Fixed R multiple" or na(sTarget) ? rTarget : (bias == 1 ? math.max(sTarget, rTarget) : math.min(sTarget, rTarget))
 
 // ============================================================================
-// DRAW — only the three levels, refreshed on the latest bar
+// HISTORY GATE — do not plan until enough chart history has actually loaded
+// ============================================================================
+var int firstTime = na
+if na(firstTime)
+    firstTime := time
+spanDays  = (time - firstTime) / 86400000.0
+historyOk = spanDays >= minHistDay
+dataOk    = not na(aAtr) and not na(aEmaF) and not na(aRngHi) and not na(entry) and not na(stopL) and not na(target)
+canPlan   = historyOk and dataOk
+
+// ============================================================================
+// PLAN LOCK — commit one plan and hold it steady
+// ============================================================================
+var float planEntry = na
+var float planStop  = na
+var float planTgt   = na
+var int   planBias  = 0
+var bool  planOn    = false
+var int   planBarIx = na
+var string planNote = ""
+var string planPat  = ""
+
+liveMode = lockMode == "Recalculate every bar"
+
+if liveMode
+    if canPlan
+        planEntry := entry
+        planStop  := stopL
+        planTgt   := target
+        planBias  := bias
+        planNote  := planTxt
+        planPat   := patternName
+        planBarIx := bar_index
+        planOn    := true
+else
+    if planOn
+        // Invalidate once price resolves the plan or the read changes materially
+        hitStop = planBias == 1 ? low <= planStop : high >= planStop
+        hitTgt  = planBias == 1 ? high >= planTgt : low <= planTgt
+        flipped = relockFlip and bias != planBias
+        if hitStop or hitTgt or flipped
+            planOn := false
+    if not planOn and canPlan
+        planEntry := entry
+        planStop  := stopL
+        planTgt   := target
+        planBias  := bias
+        planNote  := planTxt
+        planPat   := patternName
+        planBarIx := bar_index
+        planOn    := true
+
+// ============================================================================
+// DRAW — only the three committed levels
 // ============================================================================
 var line  eLine = na
 var line  sLine = na
@@ -406,7 +434,7 @@ var label eLab  = na
 var label sLab  = na
 var label tLab  = na
 
-if barstate.islast and not na(entry) and not na(stopL) and not na(target)
+if barstate.islast and planOn and not na(planEntry)
     line.delete(eLine)
     line.delete(sLine)
     line.delete(tLine)
@@ -417,42 +445,43 @@ if barstate.islast and not na(entry) and not na(stopL) and not na(target)
     x1 = math.max(0, bar_index - 50)
     x2 = bar_index + projBars
 
-    eLine := line.new(x1, entry,  x2, entry,  color=color.new(color.blue,  0), width=2)
-    sLine := line.new(x1, stopL,  x2, stopL,  color=color.new(color.red,   0), width=2, style=line.style_dashed)
-    tLine := line.new(x1, target, x2, target, color=color.new(color.green, 0), width=2, style=line.style_dashed)
+    eLine := line.new(x1, planEntry, x2, planEntry, color=color.new(color.blue,  0), width=2)
+    sLine := line.new(x1, planStop,  x2, planStop,  color=color.new(color.red,   0), width=2, style=line.style_dashed)
+    tLine := line.new(x1, planTgt,   x2, planTgt,   color=color.new(color.green, 0), width=2, style=line.style_dashed)
 
-    eLab := label.new(bar_index, entry,  (bias == 1 ? "LONG ENTRY " : "SHORT ENTRY ") + str.tostring(entry,  format.mintick), style=label.style_label_left, color=color.new(color.blue,  0), textcolor=color.white, size=size.normal)
-    sLab := label.new(bar_index, stopL,  "STOP LOSS "   + str.tostring(stopL,  format.mintick), style=label.style_label_left, color=color.new(color.red,   0), textcolor=color.white, size=size.normal)
-    tLab := label.new(bar_index, target, "TAKE PROFIT " + str.tostring(target, format.mintick), style=label.style_label_left, color=color.new(color.green, 0), textcolor=color.white, size=size.normal)
+    eLab := label.new(bar_index, planEntry, (planBias == 1 ? "LONG ENTRY " : "SHORT ENTRY ") + str.tostring(planEntry, format.mintick), style=label.style_label_left, color=color.new(color.blue,  0), textcolor=color.white, size=size.normal)
+    sLab := label.new(bar_index, planStop,  "STOP LOSS "   + str.tostring(planStop, format.mintick), style=label.style_label_left, color=color.new(color.red,   0), textcolor=color.white, size=size.normal)
+    tLab := label.new(bar_index, planTgt,   "TAKE PROFIT " + str.tostring(planTgt,  format.mintick), style=label.style_label_left, color=color.new(color.green, 0), textcolor=color.white, size=size.normal)
 
 // ============================================================================
-// ANALYSIS STATUS — the verdict, why, and the plan
+// STATUS
 // ============================================================================
-tfName = timeframe.isseconds ? str.tostring(timeframe.multiplier) + "s" : timeframe.isintraday ? (timeframe.multiplier >= 60 and timeframe.multiplier % 60 == 0 ? str.tostring(math.round(timeframe.multiplier / 60)) + "H" : str.tostring(timeframe.multiplier) + "m") : timeframe.isdaily ? "Daily" : timeframe.isweekly ? "Weekly" : timeframe.ismonthly ? (timeframe.multiplier >= 12 ? "Yearly" : timeframe.multiplier > 1 ? str.tostring(timeframe.multiplier) + "-Month" : "Monthly") : timeframe.period
+tfLabel(tf) =>
+    tf == "D" ? "Daily" : tf == "W" ? "Weekly" : tf == "M" ? "Monthly" : tf == "12M" ? "Yearly" : tf
 
-needBars = math.max(math.max(slowLen, rangeLen), math.max(poleLen + flagLen, pivotLen * 2 + 1))
-barsOk   = bar_index >= needBars
-htfOk    = not useHTF or not na(htfDiff)
-levelsOk = not na(entry) and not na(stopL) and not na(target)
-ready    = barsOk and htfOk and levelsOk
+planTFtxt  = planTFsel == "Chart" ? "Chart (" + timeframe.period + ")" : tfLabel(planTF)
+chartTooBig = timeframe.in_seconds(timeframe.period) > timeframe.in_seconds(planTF)
 
 verdict = upTrend ? "UPTREND" : downTrend ? "DOWNTREND" : "NO CLEAR TREND"
 volTxt  = not hasVol ? "no volume data" : volConfirmsUp ? "volume confirms buying" : volConfirmsDown ? "volume confirms selling" : obvUp ? "OBV rising" : obvDown ? "OBV falling" : "volume mixed"
-distPct = levelsOk ? math.abs(close - entry) / close * 100 : na
-distATR = levelsOk and atrVal > 0 ? math.abs(close - entry) / atrVal : na
-rrNow   = levelsOk ? math.abs(target - entry) / math.max(math.abs(entry - stopL), syminfo.mintick) : na
 
-readyTxt = "✔ " + syminfo.ticker + " · " + tfName + " · " + str.tostring(bar_index + 1) + " bars read — safe to switch timeframe" + "\n" + verdict + "  (up " + str.tostring(scoreUp) + "/100 · down " + str.tostring(scoreDn) + "/100) · " + volTxt + "\nPattern: " + patternName + "\nPlan: " + planTxt + "\n" + (bias == 1 ? "LONG" : "SHORT") + " · entry " + str.tostring(distPct, "#.##") + "% away (" + str.tostring(distATR, "#.#") + " ATR) · R:R " + str.tostring(rrNow, "#.##")
-waitTxt  = "⏳ ANALYZING " + syminfo.ticker + " · " + tfName + " — " + (not barsOk ? "loading history (" + str.tostring(bar_index + 1) + "/" + str.tostring(needBars) + " bars)" : not htfOk ? "waiting for higher-timeframe data" : "no valid level yet")
+distPct = planOn ? math.abs(close - planEntry) / close * 100 : na
+rrNow   = planOn ? math.abs(planTgt - planEntry) / math.max(math.abs(planEntry - planStop), syminfo.mintick) : na
+ageBars = planOn and not na(planBarIx) ? bar_index - planBarIx : 0
+
+readyTxt = "✔ PLAN LOCKED on " + planTFtxt + " · " + syminfo.ticker + " · " + str.tostring(spanDays, "#") + " days of history read" + (liveMode ? "" : "\nHolding this plan — it will not move until price hits it or the trend flips (set " + str.tostring(ageBars) + " bars ago)") + "\n" + verdict + "  (up " + str.tostring(scoreUp) + "/100 · down " + str.tostring(scoreDn) + "/100) · " + volTxt + "\nPattern: " + planPat + "\nPlan: " + planNote + "\n" + (planBias == 1 ? "LONG" : "SHORT") + " · entry " + str.tostring(distPct, "#.##") + "% away · R:R " + str.tostring(rrNow, "#.##") + (chartTooBig ? "\n⚠ Chart timeframe is above the plan timeframe — view " + planTFtxt + " or lower for accurate structure" : "")
+
+waitTxt = "⏳ COLLECTING HISTORY — " + syminfo.ticker + " · plan timeframe " + planTFtxt + "\n" + (not historyOk ? "need " + str.tostring(minHistDay) + " days, have " + str.tostring(spanDays, "#") + " — scroll left to load more history" : "waiting for " + planTFtxt + " indicators to fill")
 
 var table stTable = table.new(position.bottom_left, 1, 1, border_width=1)
 if showStatus and barstate.islast
-    table.cell(stTable, 0, 0, ready ? readyTxt : waitTxt, text_color=color.white, bgcolor=ready ? (upTrend ? color.new(color.green, 15) : downTrend ? color.new(color.red, 25) : color.new(color.gray, 15)) : color.new(color.orange, 15), text_size=size.small, text_halign=text.align_left)
+    bg = not planOn ? color.new(color.orange, 15) : planBias == 1 ? color.new(color.green, 15) : color.new(color.red, 25)
+    table.cell(stTable, 0, 0, planOn ? readyTxt : waitTxt, text_color=color.white, bgcolor=bg, text_size=size.small, text_halign=text.align_left)
 
 // ============================================================================
-// ALERTS (nothing is drawn for these)
+// ALERTS
 // ============================================================================
-reachedEntry = not na(entry) and not na(entry[1]) and (bias == 1 ? (low <= entry and low[1] > entry[1]) : (high >= entry and high[1] < entry[1]))
-alertcondition(reachedEntry, title="Price reached entry", message="{{ticker}} reached the entry level — check stop and target")
-alertcondition(upTrend and not upTrend[1],   title="Uptrend confirmed",   message="{{ticker}} confirmed an uptrend (structure + volume)")
+reachedEntry = planOn and not na(planEntry) and (planBias == 1 ? (low <= planEntry and low[1] > planEntry) : (high >= planEntry and high[1] < planEntry))
+alertcondition(reachedEntry, title="Price reached entry", message="{{ticker}} reached the planned entry — check stop and target")
+alertcondition(upTrend and not upTrend[1],     title="Uptrend confirmed",   message="{{ticker}} confirmed an uptrend (structure + volume)")
 alertcondition(downTrend and not downTrend[1], title="Downtrend confirmed", message="{{ticker}} confirmed a downtrend (structure + volume)")
