@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 // Simple Entry / Stop / Target
 // Reads whatever timeframe the chart is showing (days, weeks, months, intraday),
 // analyses trend regime, market structure and higher-timeframe context, then
@@ -48,6 +48,7 @@ biasTrend = chartUp ? 1 : -1
 
 [diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
 trending = adxVal >= adxMin
+dmiBias  = diPlus > diMinus ? 1 : -1   // which side directional movement favours
 
 // ============================================================================
 // HIGHER-TIMEFRAME CONTEXT (derived automatically from the chart timeframe)
@@ -58,9 +59,10 @@ htfDiff   = request.security(syminfo.tickerid, autoHTF, ta.ema(close, fastLen) -
 htfBias   = not useHTF or na(htfDiff) ? 0 : (htfDiff > 0 ? 1 : -1)
 htfAgrees = htfBias == 0 or htfBias == biasTrend
 
-// Trend-following only when the move has strength AND the higher timeframe agrees.
-// Otherwise the move is treated as range / counter-trend and faded instead.
-trendMode = trending and htfAgrees
+// Trend-following only when the move has strength, directional movement backs the
+// same side, AND the higher timeframe agrees. Otherwise the move is treated as
+// range / counter-trend and faded instead.
+trendMode = trending and htfAgrees and dmiBias == biasTrend
 
 // ============================================================================
 // MARKET STRUCTURE — the last several confirmed swings, not just one
