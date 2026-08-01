@@ -12,8 +12,8 @@
 // Entries are filtered for freshness: a level price has already traded through
 // in the last N plan bars is never offered, so the plan always sits ahead of the
 // market. The entry style — pullback, breakout, or either — is selectable.
-// Pattern setups are screened the same way: one price has already run past is
-// dropped, and the plan falls back to the confluence levels.
+// Pattern setups are screened from the moment they form: once price has traded
+// back to the level the retest is spent, so the plan falls back to confluence.
 strategy("Simple Entry / SL / TP — Backtest", overlay=true, max_lines_count=20, max_labels_count=20, initial_capital=10000, currency=currency.NONE, default_qty_type=strategy.fixed, default_qty_value=1, commission_type=strategy.commission.percent, commission_value=0.05, slippage=2, pyramiding=0)
 
 gPlan = "Plan"
@@ -91,6 +91,9 @@ aClose                       = request.security(syminfo.tickerid, planTF, close,
 [aRngHi, aRngLo]             = request.security(syminfo.tickerid, planTF, [ta.highest(high, rangeLen), ta.lowest(low, rangeLen)], lookahead=barmerge.lookahead_off)
 // Recently traded range — anything inside it has already been reached by price
 [aRecentHi, aRecentLo]       = request.security(syminfo.tickerid, planTF, [ta.highest(high, math.max(freshBars, 1)), ta.lowest(low, math.max(freshBars, 1))], lookahead=barmerge.lookahead_off)
+// The plan bar's own range, plus its open time — pattern freshness is measured
+// from formation, so it needs the range and a way to tell when the bar advanced
+[aHigh, aLow, aTime]         = request.security(syminfo.tickerid, planTF, [high, low, time], lookahead=barmerge.lookahead_off)
 [aVolNow, aVolAvg]           = request.security(syminfo.tickerid, planTF, [volume, ta.sma(volume, volLen)], lookahead=barmerge.lookahead_off)
 [aObv, aObvSig]              = request.security(syminfo.tickerid, planTF, [ta.obv, ta.ema(ta.obv, volLen)], lookahead=barmerge.lookahead_off)
 [aUpVol, aDnVol]             = request.security(syminfo.tickerid, planTF, [math.sum(close > open ? volume : 0.0, volLen), math.sum(close < open ? volume : 0.0, volLen)], lookahead=barmerge.lookahead_off)
@@ -280,13 +283,20 @@ float target = na
 string planTxt = "confluence pullback"
 bool noFresh   = false
 
+// A pattern entry is a retest level — it sits inside its own formation range by
+// construction, so the fixed-window test above would reject every one. Freshness
+// is measured from when the level formed instead: the extreme price has reached
+// since then is what says whether the retest is still ahead or already gone.
+var float patLvl  = na
+var int   patDir  = 0
+var float patLo   = na
+var float patHi   = na
+var int   patSeen = na
+
 if not na(aAtr) and aAtr > 0
     float pEntry = na
     float pStop  = na
     float pTgt   = na
-    // true when the level is a breakout trigger rather than a level price is
-    // expected to come back to — the two go stale in opposite directions
-    bool  pBreak = false
 
     if bias == 1 and bullFlag
         pEntry  := aFlagLo + flagRange * 0.25
@@ -305,10 +315,11 @@ if not na(aAtr) and aAtr > 0
         pTgt    := hi0 + (hi0 - lo0)
         planTxt := "ascending triangle: buy rising support, target breakout move"
     else if bias == 1 and breakoutUp
+        // The level is the broken swing, which the break just left BELOW price —
+        // a pullback level like every other pattern, not a trigger above price
         pEntry  := hi0
         pStop   := hi0 - math.max(aAtr * slBuffer, flagRange * 0.5)
         pTgt    := hi0 + poleSize * 0.75
-        pBreak  := true
         planTxt := "volume breakout: buy the retest, ride the expansion"
     else if bias == -1 and bearFlag
         pEntry  := aFlagHi - flagRange * 0.25
@@ -327,15 +338,48 @@ if not na(aAtr) and aAtr > 0
         pTgt    := lo0 - (hi0 - lo0)
         planTxt := "descending triangle: sell falling resistance, target breakdown move"
     else if bias == -1 and breakoutDown
+        // Mirror of the breakout: the broken swing now sits ABOVE price, so this is
+        // a retest to sell into, not a trigger to chase
         pEntry  := lo0
         pStop   := lo0 + math.max(aAtr * slBuffer, flagRange * 0.5)
         pTgt    := lo0 - poleSize * 0.75
-        pBreak  := true
         planTxt := "volume breakdown: sell the retest, ride the expansion"
 
-    // A trigger is spent once price has closed beyond it; a retest level is spent
-    // once price has closed back through it. Either way the move already happened.
-    patStale = not na(pEntry) and (pBreak ? (bias == 1 ? aClose > pEntry : aClose < pEntry) : (bias == 1 ? aClose < pEntry : aClose > pEntry))
+    // Restart the clock when the level is genuinely new: a pattern where there was
+    // none, a side flip, or the level itself moving. Anything smaller is the same
+    // level recomputed — restarting on that would wipe the memory every bar.
+    if na(pEntry)
+        patLvl  := na
+        patDir  := 0
+        patLo   := na
+        patHi   := na
+        patSeen := na
+    else if na(patLvl) or patDir != bias or math.abs(pEntry - patLvl) > aAtr * 0.1
+        patLvl  := pEntry
+        patDir  := bias
+        patLo   := na
+        patHi   := na
+        // Seeded with the formation bar so tracking starts on the NEXT one: the
+        // bar the level was derived from straddles it, and would self-invalidate.
+        patSeen := aTime
+
+    // The requested range repeats for every chart bar inside one plan bar, so only
+    // extend the extreme when the plan bar itself moves on.
+    if not na(patLvl) and not na(aTime)
+        if na(patSeen)
+            patSeen := aTime
+        else if aTime != patSeen and not na(aHigh) and not na(aLow)
+            patSeen := aTime
+            patLo   := na(patLo) ? aLow  : math.min(patLo, aLow)
+            patHi   := na(patHi) ? aHigh : math.max(patHi, aHigh)
+
+    // Price has already traded to the level since it formed — the retest is behind
+    // the market, not ahead of it, even though the level still sits on the right side.
+    patSpent = not na(patLvl) and (patDir == 1 ? (not na(patLo) and patLo <= patLvl) : (not na(patHi) and patHi >= patLvl))
+
+    // Every pattern entry is a level price must come BACK to, breakouts included,
+    // so one rule covers them all: the setup is spent once price has been there.
+    patStale = not na(pEntry) and patSpent
 
     // A stale pattern is dropped, not forced: the confluence path below still gets
     // its chance, and only lands in the no-fresh state if nothing survives there.
@@ -415,6 +459,10 @@ if not na(aAtr) and aAtr > 0
             useBrk = breakMode and (bias == 1 ? not na(aRecentLo) : not na(aRecentHi))
             anchor = useBrk ? (bias == 1 ? math.min(aRecentLo, entry) : math.max(aRecentHi, entry)) : trendMode and haveLeg ? (bias == 1 ? math.min(swLo, entry) : math.max(swHi, entry)) : (bias == 1 ? math.min(aRngLo, entry) : math.max(aRngHi, entry))
             stopL := bias == 1 ? anchor - aAtr * slBuffer : anchor + aAtr * slBuffer
+
+        // The status box still names the pattern, so say why the plan is not from it
+        if skipStale and patStale
+            planTxt := "pattern retest already gone — " + planTxt
 
     if not na(entry) and not na(stopL)
         stopDist = math.max(math.abs(entry - stopL), aAtr * minStopA)
@@ -534,7 +582,8 @@ verdict = upTrend ? "UPTREND" : downTrend ? "DOWNTREND" : "NO CLEAR TREND"
 volTxt  = not hasVol ? "no volume data" : volConfirmsUp ? "volume confirms buying" : volConfirmsDown ? "volume confirms selling" : obvUp ? "OBV rising" : obvDown ? "OBV falling" : "volume mixed"
 
 styleTxt = entryMode == "Breakout (above price for longs)" ? "breakout — buy above price / sell below it" : entryMode == "Either" ? "either side — nearest untouched level" : "pullback — buy below price / sell above it"
-freshTxt = freshBars > 0 ? "level untouched for the last " + str.tostring(freshBars) + " " + planTFtxt + " bars" : "freshness check off"
+// Patterns answer to skipStale, not freshBars — one line cannot claim both are off
+freshTxt = (freshBars > 0 ? "level untouched for the last " + str.tostring(freshBars) + " " + planTFtxt + " bars" : "freshness check off") + (skipStale ? " · pattern levels dropped once price revisits them" : "")
 
 distPct = planOn ? math.abs(close - planEntry) / close * 100 : na
 rrNow   = planOn ? math.abs(planTgt - planEntry) / math.max(math.abs(planEntry - planStop), syminfo.mintick) : na
