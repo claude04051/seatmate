@@ -66,16 +66,23 @@ Never view a chart *above* the plan timeframe — the status box warns you if yo
 ### Step 2 — read the status box, bottom left
 
 ```
-✔ PLAN LOCKED on Daily · AAPL · 3650 days of history read
-Holding this plan — it will not move until price hits it or the trend flips
+✔ PLAN LOCKED on Daily · AAPL · 3650 Daily bars read
+Holding this plan — it will not move until price hits it or the trend flips (set 4 bars ago)
 UPTREND  (up 85/100 · down 15/100) · volume confirms buying
 Pattern: bull flag
 Plan: bull flag: buy flag support, target measured move
+Entry style: pullback — buy below price / sell above it · level untouched for the last 20 Daily bars · pattern levels dropped once price revisits them
 LONG · entry 2.31% away · R:R 2.45
 ```
 
 That is the whole briefing: the verdict, the score behind it, what volume says,
-the pattern found, the strategy applied, and how far price must travel.
+the pattern found, the strategy applied, the entry rules in force, and how far
+price must travel.
+
+If no level survives those rules the box turns grey and says
+`⛔ NO ENTRY — nothing untouched within max distance` instead. Nothing is drawn:
+every level ahead of price has either already been reached or sits beyond
+`Max Entry Distance (ATR)`, and no plan is better than a stale one.
 
 ### Step 3 — decide whether the setup is worth taking
 
@@ -85,7 +92,8 @@ Take it seriously when **all** of these hold:
 - Winning score is **70+** and clearly beats the other side
 - Volume line says **"volume confirms"** — not *"mixed"* or *"no volume data"*
 - Pattern is a **named** one (bull flag, double bottom, breakout), not generic
-  *trend* or *range*
+  *trend* or *range* — and the Plan line does not start *pattern retest already
+  gone*, which means price has already been to that level
 - **R:R is 2.0 or better**
 
 Skip it when the verdict is *NO CLEAR TREND* — a range fade is the weakest setup
@@ -93,12 +101,17 @@ the script produces. Waiting costs nothing.
 
 ### Step 4 — place the orders (do not market-buy)
 
-The entry sits **below** price for longs and **above** price for shorts on
-purpose — it is a level price still has to come to. So:
+With the default `Entry Style` (*Pullback*) the entry sits **below** price for
+longs and **above** price for shorts on purpose — it is a level price still has
+to come to. So:
 
 1. **Limit order** at the ENTRY price
 2. **Stop-loss order** at the STOP LOSS price
 3. **Take-profit order** at the TAKE PROFIT price
+
+Set `Entry Style` to *Breakout* and the entry sits the other side of price
+instead — a level price must break through, so it wants a **stop order**, not a
+limit. *Either* takes whichever untouched level is nearest, either side.
 
 If entry is <1% away it is imminent; 5%+ makes it a watchlist item, not a trade.
 
@@ -138,8 +151,9 @@ weak signals.
 - **It is not a backtest.** It shows no proof of edge on your symbol. If you want
   historical win-rate, profit factor and expectancy, run the full version
   (`chart-analyzer-bot.pine`) which tracks every setup it ever produced.
-- **After a stop is hit it plans again immediately.** A fresh plan appearing right
-  after a loss is not a signal to jump back in — judge it on Step 3 like any other.
+- **After a stop is hit it plans again as soon as a level qualifies.** A fresh plan
+  appearing right after a loss is not a signal to jump back in — judge it on Step 3
+  like any other. Often nothing qualifies and you get the NO ENTRY box instead.
 - **No-volume symbols lose the strongest angle.** Many forex and index CFDs carry
   no real volume; the score goes neutral there, so lean harder on structure.
 - Nothing here is financial advice — validate on your own instrument before
@@ -152,7 +166,7 @@ weak signals.
 **What the analysis actually does** (all of it happens under the hood — none of it
 is drawn):
 
-### Trend detection — scored 0–100 from four independent angles
+### Trend detection — scored 0–100 from five independent angles
 
 No single lagging indicator gets to declare a trend on its own. Each angle
 contributes points, and the trend is only *followed* once the score clears
@@ -173,8 +187,9 @@ score neutral instead of being penalised.
 
 ### Chart patterns — each with its own trade plan
 
-When a pattern is found it *overrides* the generic pullback logic, because a
-pattern implies a specific entry, invalidation and objective:
+When a pattern is found and its entry is still ahead of price it *overrides* the
+generic pullback logic, because a pattern implies a specific entry, invalidation
+and objective:
 
 | Pattern | Entry | Stop | Target |
 |---|---|---|---|
@@ -183,10 +198,18 @@ pattern implies a specific entry, invalidation and objective:
 | **Double bottom** | Neckline retest | Below the double low | Pattern height projected up |
 | **Double top** | Neckline retest | Above the double top | Pattern height projected down |
 | **Ascending triangle** (flat highs, rising lows) | Rising support | Below the last low | Breakout measured move |
+| **Descending triangle** (flat lows, falling highs) | Falling resistance | Above the last high | Breakdown measured move |
 | **Volume breakout/breakdown** (structure break on ≥1.5× volume) | Retest of the broken level | Beyond it | 75% of the impulse |
 
-If no pattern qualifies — or its entry is already out of reach — it falls back to
-the confluence method below.
+Every one of these is a level price must come **back** to — the volume breakout
+included, which buys the retest of the broken swing rather than chasing the break.
+
+So each is tracked from the moment it forms, and once price has traded back
+through it the retest is **spent**: it has already happened, and the setup is
+dropped (`Ignore setups price has already run past`). If no pattern qualifies — or
+its entry is out of reach, or already spent — it falls back to the confluence
+method below, and the status box prefixes the plan with *pattern retest already
+gone*.
 
 ### The rest of the pipeline
 
@@ -203,17 +226,21 @@ the confluence method below.
    Fibonacci retracements of the leg, the fast EMA, **every remembered swing**,
    swings on the opposite side (broken resistance becomes support and vice versa),
    and **round numbers**. In range mode it uses the range edges instead. It then:
-   - discards levels on the wrong side of price,
+   - discards levels on the wrong side of price for the chosen `Entry Style`,
+   - **discards levels price has already traded through** in the last N bars
+     (`Entry level must be untouched for N bars`), so the entry is always a level
+     still ahead of the market rather than one the move already left behind,
    - **discards levels too far away to realistically fill** (`Max Entry Distance
      (ATR)`), so you never get shown a price that would take months to reach,
    - picks whichever surviving level has the most agreement clustered around it,
      ties going to the one nearest price.
 
-   If nothing is within reach it falls back to the nearest real structure, and
-   only then to a modest pullback from price.
+   If nothing survives those filters, **no plan is formed at all** — the status box
+   says NO ENTRY and the chart stays empty until a level qualifies.
 6. **Stop placement.** Beyond the structure that would invalidate the idea, plus an
    ATR buffer, and never closer than a minimum ATR distance so normal noise can't
-   stop you out.
+   stop you out. Breakout entries anchor to the recent range edge rather than the
+   full leg extreme, so risk is sized off the level being broken, not the whole move.
 7. **Target projection.** A Fibonacci extension of the measured leg (or the opposite
    range edge), floored at your minimum reward:risk so a setup is never shown with
    a worse payoff than you accept.
@@ -224,18 +251,23 @@ the confluence method below.
 **What it draws — and this is all it draws:**
 
 - **Blue line — LONG ENTRY / SHORT ENTRY** at a price that is *still ahead of the
-  market*, so you can actually get filled. In an uptrend it sits **below** price
-  (buy the pullback to support); in a downtrend it sits **above** price (sell the
-  bounce into resistance). The label says LONG or SHORT, which tells you the
-  direction it expects the stock to move.
+  market*, so you can actually get filled. On the default *Pullback* style an
+  uptrend puts it **below** price (buy the pullback to support) and a downtrend
+  **above** price (sell the bounce into resistance); *Breakout* puts it the other
+  side. The label says LONG or SHORT, which tells you the direction it expects the
+  stock to move.
 - **Red dashed line — STOP LOSS**, placed beyond the last swing plus an ATR buffer.
-- **Green dashed line — TAKE PROFIT**, at your chosen R multiple (default 2× the risk).
+- **Green dashed line — TAKE PROFIT**, at the structure projection or your
+  `Minimum Reward:Risk`, whichever pays more (so never worse than 2× the risk by
+  default). Set `Take Profit` to *Fixed R multiple* to use that multiple alone.
 
 Each line carries a label with the exact price, and all three project forward to
-the right so you can see the expected move.
+the right so you can see the expected move. When no level qualifies, nothing is
+drawn at all — see the NO ENTRY box.
 
-The levels **recalculate on every new bar**, so what you see is always the latest,
-most relevant setup for the timeframe on screen.
+The analysis **re-runs on every new bar**, but with the default `Plan Updates` the
+drawn levels only change when the plan is released (see below), so what you see is
+the setup it committed to rather than a line that drifts every bar.
 
 ### The plan does not move when you switch chart timeframes
 
@@ -285,24 +317,30 @@ switching tickers re-analyses the new one.
 **Status readout (bottom-left):** because bigger timeframes take a moment to load
 history, a small box tells you where the analysis stands:
 
-- `⏳ ANALYZING AAPL · Weekly — loading history (32/50 bars)` — still working, the
-  levels aren't final yet.
-- When it's finished, the box turns green (uptrend), red (downtrend) or grey (no
-  clear trend) and reports the whole verdict:
+- `⏳ COLLECTING HISTORY — AAPL · plan timeframe Weekly` / `need 50 Weekly bars,
+  have 32 — scroll left to load more history` — still working, the levels aren't
+  final yet.
+- When a plan is committed the box turns green (long) or red (short) and reports
+  the whole verdict:
 
   ```
-  ✔ AAPL · Weekly · 1240 bars read — safe to switch timeframe
+  ✔ PLAN LOCKED on Weekly · AAPL · 1240 Weekly bars read
+  Holding this plan — it will not move until price hits it or the trend flips (set 4 bars ago)
   UPTREND  (up 85/100 · down 15/100) · volume confirms buying
   Pattern: bull flag
   Plan: bull flag: buy flag support, target measured move
-  LONG · entry 2.31% away (1.4 ATR) · R:R 2.45
+  Entry style: pullback — buy below price / sell above it · level untouched for the last 20 Weekly bars · pattern levels dropped once price revisits them
+  LONG · entry 2.31% away · R:R 2.45
   ```
 
   So you get the verdict, the score behind it, what volume is saying, the pattern
-  found, the strategy being applied, and how far price must travel to reach the
-  entry — without measuring anything yourself.
+  found, the strategy being applied, the entry rules in force, and how far price
+  must travel to reach the entry — without measuring anything yourself.
+- `⛔ NO ENTRY — nothing untouched within max distance` on grey — the read is
+  finished, but every candidate level has been reached already or is too far away,
+  so no plan was formed.
 
-Wait for the green ✔ before switching, and you'll know every timeframe was read
+Wait for the ✔ before switching, and you'll know every timeframe was read
 completely. Turn it off with the `Show analysis status` setting.
 
 **Settings worth touching:** `Minimum Reward:Risk` (never show a setup paying less
@@ -310,7 +348,15 @@ than this), `Target Extension (Fib)` for how far the projection runs, `Stop Buff
 (ATR)` and `Minimum Stop Distance (ATR)` for how much room the stop gets,
 `Structure Lookback` for how major the swings must be (higher = bigger structure),
 `Treat as trending above ADX` for how strict the trend/range split is, and
-`Use higher-timeframe context` to turn the confirmation layer off.
+`Require volume to confirm trend` to stop volume vetoing a trend outright.
+
+**Settings that decide whether you get a plan at all:** `Entry Style` (pullback,
+breakout, or either side), `Entry level must be untouched for N bars` (default 20;
+raise it to demand a level price has stayed away from for longer, 0 to switch the
+check off), `Ignore setups price has already run past` (drops a pattern once
+price has been back to its retest level), and `Max Entry Distance (ATR)` (how far
+an entry may sit from price). Tighten these and you will see NO ENTRY more often;
+that is the point of them.
 
 There is also an optional alert ("Price reached entry") — it draws nothing on the
 chart; create it via the ⏰ icon if you want to be told when price arrives.

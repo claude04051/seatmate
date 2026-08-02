@@ -614,11 +614,20 @@ if planOn and planBarIx != lastPlanBar
     if flat
         strategy.cancel_all()
 
+// Entry Style / patterns can put the level on either side of price, and a
+// limit order on the far side fills instantly at market instead of waiting
+// for the level — so the order type follows price, not the setting.
 if inWindow and planOn and flat and not na(qty) and qty > 0
     if planBias == 1
-        strategy.entry("Long", strategy.long, qty=qty, limit=planEntry)
+        if planEntry <= close
+            strategy.entry("Long", strategy.long, qty=qty, limit=planEntry)
+        else
+            strategy.entry("Long", strategy.long, qty=qty, stop=planEntry)
     else
-        strategy.entry("Short", strategy.short, qty=qty, limit=planEntry)
+        if planEntry >= close
+            strategy.entry("Short", strategy.short, qty=qty, limit=planEntry)
+        else
+            strategy.entry("Short", strategy.short, qty=qty, stop=planEntry)
 
 // Capture the bracket at the moment of the fill
 if strategy.position_size != 0 and strategy.position_size[1] == 0
