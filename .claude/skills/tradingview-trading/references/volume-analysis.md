@@ -101,12 +101,139 @@ trading, common with low-priced and low-float stocks:
   — useful for a quick "is money flowing in or out right now" read without
   eyeballing a raw cumulative line.
 
+## Volume Spread Analysis (VSA)
+
+A more granular methodology (Tom Williams, building on Wyckoff) that reads each bar
+as a three-way relationship between **volume (effort), spread/range (result), and
+where the close falls within that range**. It's discretionary and has no peer-
+reviewed validation, but it's a real, widely-taught system with specific named
+setups worth recognizing rather than folklore:
+
+- **Effort vs. Result is the core law.** They should agree — high volume producing a
+  wide-range bar with real progress is a healthy move. When they diverge, something
+  is fighting the obvious direction: high volume + narrow spread/little progress =
+  **absorption** (aggressive orders being soaked up by an opposing side), a warning
+  the move may stall or reverse.
+- **No Demand**: narrow-spread up bar on low volume during an uptrend — buyers
+  aren't showing up, the rally may be stalling.
+- **No Supply**: narrow-spread down bar on low volume during a downtrend — sellers
+  have dried up, often precedes a bounce.
+- **Stopping Volume**: a down bar with very high volume and a wide spread that
+  closes in the upper half (well off the lows) — heavy selling hit the tape but was
+  absorbed; smart-money demand may be entering.
+- **Climactic action (Selling/Buying Climax)**: after a sustained trend, an
+  extreme-volume, wide-spread bar (the highest volume in weeks) that reverses on the
+  next bar — the final panic wave being absorbed, often marking exhaustion.
+- **Upthrust**: price spikes above a prior high intrabar on rising volume, then
+  closes back below it — a stop-hunt/trap signaling weakness, not strength (the
+  VSA/Wyckoff analog of a failed breakout).
+- **Shakeout**: the bullish mirror — a sharp spike below support on high volume that
+  closes back up, shaking out weak longs while supply gets absorbed; a sign of
+  strength.
+- **Test bar**: a lower-volume bar probing a prior low/support after selling has
+  already dried up — a "clean" low-volume test confirms supply is gone.
+
+These setups are rarely standalone signals — practitioners stack a sequence (e.g.
+Selling Climax → Test → No Supply) to time a low-risk entry, mirroring the Wyckoff
+accumulation phases in `references/chart-patterns.md`.
+
+## Order flow, footprint charts & tape reading
+
+A finer-grained lens than bar-level volume: **footprint charts** split each candle's
+volume by price level into buy-initiated (hit the ask) vs. sell-initiated (hit the
+bid) volume instead of just a single OHLC bar.
+
+- **Delta** = ask volume − bid volume at a price/bar; positive = buyers aggressing,
+  negative = sellers aggressing. **Delta divergence** — price makes a new high while
+  delta makes a lower high — warns a move is losing fuel, the order-flow analog of
+  RSI/MACD divergence.
+- **Imbalance**: a price level where one side heavily out-traded the diagonally
+  opposite level (commonly a 300%/3:1 threshold). **Stacked imbalances** (several
+  consecutive same-side imbalances) mark zones that tend to act as support/resistance
+  on retest.
+- **Absorption**: heavy aggressive volume hits a price but price doesn't move —
+  passive resting orders (often institutional/iceberg) are absorbing it. This is the
+  order-flow-chart version of VSA's "high volume, narrow spread."
+- **Iceberg orders**: large orders showing only a small visible "tip," refilling as
+  filled, used to hide true size and avoid moving the market — a common cause of
+  absorption at a level.
+- **Platform note**: TradingView added native footprint charts (volume-at-price,
+  delta, POC, Value Area) on its Premium+ tiers, and exposed the underlying data to
+  Pine Script via `request.footprint()` for building custom order-flow indicators
+  and alerts (see `references/platform-guide.md`). It still lacks a true real-time
+  Level 2/DOM order-book view — dedicated platforms like Bookmap, Sierra Chart, and
+  ATAS are the specialized tools for that if the user asks about true order-book
+  reading, not TradingView itself.
+
+## Dark pool prints & unusual options activity
+
+Separate data feeds from on-exchange volume bars, but widely watched alongside
+"volume hype" screening as leading/confirming signals of institutional positioning —
+worth mentioning to a user chasing unusual-volume names even though TradingView's own
+volume bars don't include this data directly.
+
+- **Dark pools**: private venues where institutions execute large blocks off-exchange
+  to avoid moving the market before the trade is filled and publicly reported (with a
+  delay). Third-party trackers surface large block prints and whether they printed
+  near the bid or ask, as a rough proxy for institutional buy/sell intent.
+- **Unusual options activity (UOA)**: a contract's volume or open interest spiking
+  well above its norm, especially when volume exceeds open interest (signaling new
+  positioning, not closing an existing one) and/or volume runs several multiples
+  above average. **Sweep orders** — routed aggressively across exchanges to fill
+  immediately, often paying through the ask — read as higher-conviction than a
+  passive block trade.
+- Treat specific numeric "accuracy" claims for combining dark-pool and options-flow
+  data (these circulate a lot in trading-education marketing) with real skepticism
+  unless the user provides a credible source — much of this space is vendor
+  marketing rather than independently validated research.
+
+## Float rotation & short interest (amplifiers of a volume spike)
+
+Context that explains *why* the same dollar volume produces a much bigger price
+swing on some names than others — especially relevant for the low-float "volume
+hype" names this skill flags as higher-risk.
+
+- **Float rotation** = today's volume ÷ float (e.g. 20M volume ÷ 5M float = 4x
+  rotation). Low float means less supply to absorb demand, so a given amount of
+  buying moves price much further. Rule-of-thumb practitioner tiers (not rigorously
+  validated — treat as a risk flag, not a timing signal): 1-2x rotation = building
+  momentum; 2-3x = extreme activity, watch for exhaustion; 4-5x+ often marks
+  *climactic* buying rather than a fresh start — names that rotate float multiple
+  times in one session frequently reverse hard once early momentum fades.
+- **Days to Cover (DTC)** = short interest ÷ average daily volume — how many days
+  shorts would need to fully cover at normal volume. Traders start watching above
+  ~5-6 days; double-digit DTC on a small cap is classic short-squeeze fuel, since a
+  sudden volume/price spike compresses the *effective* cover time and can force
+  shorts to buy simultaneously — the feedback loop behind historical squeezes.
+
+## What the evidence actually says about volume spikes
+
+Practitioner RVOL/float-rotation thresholds above are heuristics, not proven rules —
+be honest about that distinction with the user. The academic literature is more
+cautious and more interesting:
+- Abnormal volume is a real, documented predictor of returns, but studies find a
+  pattern of short-run continuation followed by long-run reversal as the volume
+  spike mean-reverts.
+- **Who is trading matters more than how much.** Research (e.g. Ülkü, *Journal of
+  Forecasting*, 2019) finds high *institutional* buying volume with a rising price is
+  less likely to reverse (informed flow), while high volume from *retail/attention-
+  driven* buying on a rising price is *more* likely to reverse — the opposite
+  intuition from "big volume always confirms the move."
+- A recent systematic test of intraday OHLCV-only signals found both "volume spike →
+  continuation" and "volume dry-up → reversal" failed as standalone rules once tested
+  rigorously. **The takeaway for this skill**: raw volume-spike size alone is weak
+  and context-dependent — combine it with price structure, an identifiable catalyst,
+  and (where available) order-flow/absorption evidence rather than treating a big
+  volume bar as a signal by itself.
+
 ## Quick synthesis checklist
 
 When asked "is this volume meaningful," walk through:
 1. Is it elevated vs. this stock's own recent average (not just "big number")?
 2. Is there a level/pattern trigger nearby that this volume is confirming?
-3. Is price confirming volume's direction, or diverging from it?
-4. Is there an identifiable catalyst?
-5. Is the move already extended (exhaustion risk) or just starting
+3. Is price confirming volume's direction, or diverging from it (VSA effort-vs-
+   result, OBV/A-D divergence)?
+4. Is there an identifiable catalyst — and does the float/short-interest picture
+   explain why this move is unusually large?
+5. Is the move already extended (exhaustion/climax risk) or just starting
    (confirmation of a fresh move)?

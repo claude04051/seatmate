@@ -75,14 +75,97 @@ up recently."
   entry) instead of an arbitrary round-number stop — see
   `references/risk-management.md`.
 
+## Trend strength & direction
+
+- **ADX / DMI (Average Directional Index / Directional Movement Index)**: three
+  lines — +DI, -DI, and ADX. **ADX is non-directional** — it only measures trend
+  *strength* (0-100), never direction; direction comes from whichever of +DI/-DI is
+  on top. Thresholds: below 20 = no trend/ranging (favor mean-reversion tools like
+  RSI/Stochastic/Bollinger fades); 20-25 = ambiguous; above 25 = trending market
+  (favor trend-following tools — MAs, MACD, Supertrend); above 40 = strong trend.
+  Rising ADX = trend strengthening regardless of direction; falling ADX = weakening
+  even if price is still moving. Use ADX as a **regime filter** to decide which
+  *other* indicators are even worth trusting on this chart right now, rather than
+  as a standalone signal.
+- **Parabolic SAR**: plots dots below price (uptrend) or above (downtrend) as a
+  trailing stop that accelerates toward price as a trend matures (wide early in a
+  trend, tighter later). When price crosses the dots, the system flips sides. Works
+  well as a trailing-stop reference in trending markets; whipsaws badly in
+  sideways/choppy conditions — pair with ADX > 25 before trusting its flips.
+- **Supertrend**: an ATR-based trend-following overlay (default ATR length 10,
+  multiplier 3) that trails in the trend's direction and flips (changing color)
+  only when price closes through it. Functions as both a trend filter and a
+  trailing stop simultaneously — popular specifically because it's a built-in
+  TradingView study. Same caveat as Parabolic SAR: pair with an ADX filter to avoid
+  trading its flips during low-trend chop.
+
+## Intraday reference levels: Pivot Points
+
+Computed from the prior session's high/low/close to project support/resistance for
+the *current* session — a day-trading staple, distinct from the swing-oriented
+support/resistance in `references/trend-and-levels.md`.
+
+- **Standard/Classic**: PP = (H+L+C)/3, with R1/S1/R2/S2/R3/S3 derived from that
+  pivot. The day-trading default.
+- **Woodie's**: weights the close more heavily (PP = (H+L+2C)/4), reacting fastest
+  to the latest price action.
+- **Fibonacci Pivots**: same base PP, but the surrounding levels sit at 38.2%/
+  61.8%/100% of the prior day's range from the PP — suits trend/swing traders more
+  than pure scalpers.
+- **Camarilla**: de-emphasizes the central pivot; computes 8 levels directly off
+  the close with tighter spacing near price. The H3/L3 levels are typically treated
+  as mean-reversion/fade zones (with a stop beyond H4/L4), while a close beyond
+  H4/L4 signals breakout/trend continuation rather than reversal. Best suited to
+  30m-1H charts.
+
 ## Trend/Momentum combo systems
 
-- **Ichimoku Cloud**: a multi-part system (Tenkan-sen, Kijun-sen, Senkou Span
-  A/B forming the "cloud," Chikou Span). Price above the cloud = bullish bias,
-  below = bearish, inside = transition/no clear trend. Cloud thickness implies
-  support/resistance strength. Powerful but visually dense — only bring this
-  up if the user is already using it or explicitly asks, since it can clutter
-  a chart read for someone who isn't familiar with it.
+- **Ichimoku Cloud** ("one glance"): five components computed from rolling
+  highs/lows, not moving averages of price.
+  - **Tenkan-sen** (Conversion Line) = (9-period high + 9-period low) / 2 — fast,
+    reacts quickly.
+  - **Kijun-sen** (Base Line) = (26-period high + 26-period low) / 2 — acts as
+    dynamic support/resistance and a slower trend-confirmation baseline; also
+    usable as a trailing-stop reference.
+  - **Senkou Span A** = (Tenkan-sen + Kijun-sen) / 2, plotted **26 periods
+    forward**. **Senkou Span B** = (52-period high + 52-period low) / 2, also
+    plotted 26 periods forward. The shaded zone between them is the **Kumo
+    (cloud)** — the only mainstream TA element that projects support/resistance
+    *ahead* of price rather than describing the past.
+  - **Chikou Span** (Lagging Span) = current close, plotted **26 periods back** —
+    used as a confirmation filter: many Ichimoku traders only trust a signal when
+    the Chikou Span sits clearly above (bullish) or below (bearish) the price it
+    overlaps 26 bars ago, with no candles obstructing it.
+  - **Reading it**: price above the cloud = bullish regime, below = bearish,
+    inside = transition/no clear trend. **Cloud thickness = conviction** — a thick
+    Kumo marks a strong, harder-to-break support/resistance zone; a thin one
+    signals higher breakout odds. A **Kumo twist** (Span A crossing Span B inside
+    the forward-projected cloud) is a genuinely anticipatory reversal signal,
+    visible up to 26 periods before price reaches it.
+  - A full bullish setup stacks several of these: price closes above the cloud,
+    the cloud itself is green (Span A > Span B), Tenkan-sen crosses above
+    Kijun-sen above the cloud, and the Chikou Span confirms clear of price. Only
+    bring the full system into a chart read if the user is already using it or
+    explicitly asks — it's powerful but visually dense for someone unfamiliar
+    with it; a simpler "price above/below cloud + cloud color" read is usually
+    enough for a general chart analysis.
+
+## Multi-timeframe analysis (MTFA)
+
+A formal practice, not just "also check the daily." Alexander Elder's **Triple
+Screen** system is the classic framework: **Screen 1** (higher timeframe) sets the
+dominant trend/bias using a trend tool; **Screen 2** (middle timeframe) uses an
+oscillator (RSI/Stochastic) to find pullbacks *against* that trend — e.g. only look
+for longs on daily-chart dips when the weekly trend is up; **Screen 3** (lower
+timeframe) times the precise entry.
+
+Practical rule of thumb: keep roughly a 4:1 to 6:1 ratio between adjacent
+timeframes — e.g. weekly→daily→4H for swing trading, daily→1H→15min for active
+trading, 1H→15min→5min for day trading. Wide enough to give real context, not so
+wide the frames become unrelated. The core discipline: **the higher timeframe sets
+directional bias; the lower timeframe only times entries in that direction** — a
+technically clean lower-timeframe setup that fights the higher-timeframe trend
+should be skipped or sized down, not treated as an independent signal.
 
 ## How to combine indicators without redundancy
 
